@@ -1,0 +1,162 @@
+[
+  {
+    "_id": "68ceb27c1e60cefbdcc65df7",
+    "name": "Bageshri",
+    "tags": [
+      "Evening",
+      "Romantic",
+      "Popular"
+    ],
+    "idealHours": [
+      18,
+      19,
+      20,
+      21
+    ],
+    "description": "A romantic evening raga with sweet melodies",
+    "isRecommended": true,
+    "createdAt": "2025-09-20T13:56:12.963Z",
+    "updatedAt": "2025-09-20T13:56:12.963Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65df5",
+    "name": "Darbari",
+    "tags": [
+      "Night",
+      "Serious",
+      "Royal"
+    ],
+    "idealHours": [
+      21,
+      22,
+      23,
+      0
+    ],
+    "description": "A royal night raga with serious character",
+    "isRecommended": true,
+    "createdAt": "2025-09-20T13:56:12.961Z",
+    "updatedAt": "2025-09-20T13:56:12.961Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65def",
+    "name": "Kafi",
+    "tags": [
+      "Evening",
+      "Light",
+      "Popular"
+    ],
+    "idealHours": [
+      19,
+      20,
+      21,
+      22
+    ],
+    "description": "A light evening raga popular in semi-classical music",
+    "isRecommended": true,
+    "createdAt": "2025-09-20T13:56:12.959Z",
+    "updatedAt": "2025-09-20T13:56:12.959Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65df3",
+    "name": "Malkauns",
+    "tags": [
+      "Night",
+      "Deep",
+      "Mystical"
+    ],
+    "idealHours": [
+      22,
+      23,
+      0,
+      1
+    ],
+    "description": "A deep night raga with mystical qualities",
+    "isRecommended": true,
+    "createdAt": "2025-09-20T13:56:12.961Z",
+    "updatedAt": "2025-09-20T13:56:12.961Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65ded",
+    "name": "Bhairavi",
+    "tags": [
+      "Morning",
+      "Devotional",
+      "Classical"
+    ],
+    "idealHours": [
+      6,
+      7,
+      8,
+      9
+    ],
+    "description": "A morning raga with devotional character",
+    "isRecommended": false,
+    "createdAt": "2025-09-20T13:56:12.959Z",
+    "updatedAt": "2025-09-20T13:56:12.959Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65df9",
+    "name": "Hamsadhwani",
+    "tags": [
+      "Evening",
+      "Light",
+      "Popular"
+    ],
+    "idealHours": [
+      18,
+      19,
+      20,
+      21
+    ],
+    "description": "A light evening raga popular in Carnatic music",
+    "isRecommended": false,
+    "createdAt": "2025-09-20T13:56:12.964Z",
+    "updatedAt": "2025-09-20T13:56:12.964Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65df1",
+    "name": "Todi",
+    "tags": [
+      "Morning",
+      "Serious",
+      "Classical"
+    ],
+    "idealHours": [
+      7,
+      8,
+      9,
+      10
+    ],
+    "description": "A serious morning raga with deep emotional content",
+    "isRecommended": false,
+    "createdAt": "2025-09-20T13:56:12.960Z",
+    "updatedAt": "2025-09-20T13:56:12.960Z",
+    "__v": 0
+  },
+  {
+    "_id": "68ceb27c1e60cefbdcc65deb",
+    "name": "Yaman",
+    "tags": [
+      "Evening",
+      "Romantic",
+      "Popular"
+    ],
+    "idealHours": [
+      18,
+      19,
+      20,
+      21
+    ],
+    "description": "A beautiful evening raga known for its romantic appeal",
+    "isRecommended": false,
+    "createdAt": "2025-09-20T13:56:12.958Z",
+    "updatedAt": "2025-09-20T13:56:12.958Z",
+    "__v": 0
+  }
+]
