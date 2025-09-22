@@ -86,7 +86,7 @@ const TransactionReport: React.FC<TransactionReportProps> = ({ isOpen, onClose, 
     
     setLoading(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/transactions/user/${user.phone}?page=${currentPage}&limit=10`, {
+      const response = await fetch(`http://localhost:3006/api/transactions/user/${user.phone}?page=${currentPage}&limit=10`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -109,7 +109,7 @@ const TransactionReport: React.FC<TransactionReportProps> = ({ isOpen, onClose, 
   const loadAllTransactions = async () => {
     setLoading(true);
     try {
-      const url = new URL('http://localhost:3001/api/transactions/admin/all');
+      const url = new URL('http://localhost:3006/api/transactions/admin/all');
       url.searchParams.append('page', currentPage.toString());
       url.searchParams.append('limit', '20');
       if (searchPhone) {
@@ -140,7 +140,7 @@ const TransactionReport: React.FC<TransactionReportProps> = ({ isOpen, onClose, 
 
   const loadSummary = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/transactions/admin/summary', {
+      const response = await fetch('http://localhost:3006/api/transactions/admin/summary', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -159,7 +159,7 @@ const TransactionReport: React.FC<TransactionReportProps> = ({ isOpen, onClose, 
 
   const loadStats = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/transactions/admin/stats', {
+      const response = await fetch('http://localhost:3006/api/transactions/admin/stats', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }

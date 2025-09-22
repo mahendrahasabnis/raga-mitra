@@ -7,37 +7,28 @@ interface ArtistCarouselProps {
   selectedRaga: any | null;
   selectedArtist: any | null;
   onArtistSelect: (artist: any) => void;
+  artists: any[];
 }
 
 const ArtistCarousel: React.FC<ArtistCarouselProps> = ({ 
   selectedRaga, 
   selectedArtist, 
-  onArtistSelect 
+  onArtistSelect,
+  artists
 }) => {
-  const [artists, setArtists] = useState<any[]>([]);
   const [filteredArtists, setFilteredArtists] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const fetchArtists = async () => {
-      try {
-        setLoading(true);
-        const data = await artistApi.getArtists(selectedRaga?.name);
-        setArtists(data);
-        setFilteredArtists(data);
-        
-        // Don't auto-select - let App.tsx handle selection
-      } catch (error) {
-        console.error('Error fetching artists:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchArtists();
-  }, [selectedRaga, selectedArtist, onArtistSelect]);
+    if (artists.length > 0) {
+      setFilteredArtists(artists);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+  }, [artists]);
 
   // Filter artists based on search term and move selected artist to first position
   useEffect(() => {

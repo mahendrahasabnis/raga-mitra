@@ -74,7 +74,7 @@ const ArtistConfig: React.FC<ArtistConfigProps> = ({ onBack }) => {
   const loadArtists = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/artists', {
+      const response = await fetch('http://localhost:3006/api/artists', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -94,8 +94,8 @@ const ArtistConfig: React.FC<ArtistConfigProps> = ({ onBack }) => {
   const handleSave = async () => {
     try {
       const url = editingArtist 
-        ? `http://localhost:3001/api/artists/${editingArtist._id}`
-        : 'http://localhost:3001/api/artists';
+        ? `http://localhost:3006/api/artists/${editingArtist._id}`
+        : 'http://localhost:3006/api/artists';
       
       const method = editingArtist ? 'PUT' : 'POST';
       
@@ -144,7 +144,7 @@ const ArtistConfig: React.FC<ArtistConfigProps> = ({ onBack }) => {
     if (!confirm('Are you sure you want to delete this artist?')) return;
     
     try {
-      const response = await fetch(`http://localhost:3001/api/artists/${artistId}`, {
+      const response = await fetch(`http://localhost:3006/api/artists/${artistId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -169,7 +169,7 @@ const ArtistConfig: React.FC<ArtistConfigProps> = ({ onBack }) => {
     
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/artists', {
+      const response = await fetch('http://localhost:3006/api/artists', {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -312,7 +312,7 @@ const ArtistConfig: React.FC<ArtistConfigProps> = ({ onBack }) => {
           }));
 
           try {
-            const response = await fetch('http://localhost:3001/api/artists/batch-import', {
+            const response = await fetch('http://localhost:3006/api/artists/batch-import', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

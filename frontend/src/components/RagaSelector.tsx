@@ -7,32 +7,23 @@ import { getCurrentSeason } from '../utils/marathiCalendar';
 interface RagaSelectorProps {
   selectedRaga: any | null;
   onRagaSelect: (raga: any) => void;
+  ragas: any[];
 }
 
-const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect }) => {
-  const [ragas, setRagas] = useState<any[]>([]);
+const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect, ragas }) => {
   const [filteredRagas, setFilteredRagas] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const fetchRagas = async () => {
-      try {
-        const data = await ragaApi.getRagas();
-        setRagas(data);
-        setFilteredRagas(data);
-        
-        // Don't auto-select - let App.tsx handle selection
-      } catch (error) {
-        console.error('Error fetching ragas:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchRagas();
-  }, [onRagaSelect]);
+    if (ragas.length > 0) {
+      setFilteredRagas(ragas);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+  }, [ragas]);
 
   // Sort and filter ragas based on current season, hour, and popularity
   useEffect(() => {

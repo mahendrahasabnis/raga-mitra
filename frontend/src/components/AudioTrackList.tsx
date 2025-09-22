@@ -9,9 +9,10 @@ interface AudioTrackListProps {
 const AudioTrackList: React.FC<AudioTrackListProps> = ({ tracks, onTrackSelect }) => {
   const [ratings, setRatings] = useState<{ [key: string]: number }>({});
 
-  const handleRateTrack = async (trackId: string, rating: number) => {
+  const handleRateTrack = async (track: any, rating: number) => {
     try {
       // TODO: Implement rating API call
+      const trackId = track._id || track.id;
       console.log(`Rating track ${trackId} with ${rating} stars`);
       setRatings(prev => ({ ...prev, [trackId]: rating }));
     } catch (error) {
@@ -35,11 +36,12 @@ const AudioTrackList: React.FC<AudioTrackListProps> = ({ tracks, onTrackSelect }
       <div className="space-y-2">
         {tracks.map((track, index) => {
           const averageRating = getAverageRating(track);
-          const userRating = ratings[track._id] || 0;
-          
-          return (
+        const trackId = track._id || track.id;
+        const userRating = ratings[trackId] || 0;
+        
+        return (
             <div
-              key={track._id}
+              key={trackId}
               className="card hover:bg-white/20 transition-colors cursor-pointer"
               onClick={() => onTrackSelect(track)}
             >
@@ -115,7 +117,7 @@ const AudioTrackList: React.FC<AudioTrackListProps> = ({ tracks, onTrackSelect }
                         key={star}
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleRateTrack(track._id, star);
+                          handleRateTrack(track, star);
                         }}
                         className="text-white/40 hover:text-yellow-400 transition-colors"
                       >

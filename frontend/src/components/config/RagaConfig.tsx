@@ -108,7 +108,7 @@ const RagaConfig: React.FC<RagaConfigProps> = ({ onBack }) => {
   const loadRagas = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/ragas', {
+      const response = await fetch('http://localhost:3006/api/ragas', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -128,8 +128,8 @@ const RagaConfig: React.FC<RagaConfigProps> = ({ onBack }) => {
   const handleSave = async () => {
     try {
       const url = editingRaga 
-        ? `http://localhost:3001/api/ragas/${editingRaga._id}`
-        : 'http://localhost:3001/api/ragas';
+        ? `http://localhost:3006/api/ragas/${editingRaga._id}`
+        : 'http://localhost:3006/api/ragas';
       
       const method = editingRaga ? 'PUT' : 'POST';
       
@@ -171,7 +171,7 @@ const RagaConfig: React.FC<RagaConfigProps> = ({ onBack }) => {
     if (!confirm('Are you sure you want to delete this raga?')) return;
     
     try {
-      const response = await fetch(`http://localhost:3001/api/ragas/${ragaId}`, {
+      const response = await fetch(`http://localhost:3006/api/ragas/${ragaId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -191,7 +191,7 @@ const RagaConfig: React.FC<RagaConfigProps> = ({ onBack }) => {
     
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3001/api/ragas', {
+      const response = await fetch('http://localhost:3006/api/ragas', {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -371,7 +371,7 @@ const RagaConfig: React.FC<RagaConfigProps> = ({ onBack }) => {
             const token = localStorage.getItem('token');
             console.log('Import: Making API call with token:', token ? 'Token exists' : 'No token');
             
-            const response = await fetch('http://localhost:3001/api/ragas/batch-import', {
+            const response = await fetch('http://localhost:3006/api/ragas/batch-import', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

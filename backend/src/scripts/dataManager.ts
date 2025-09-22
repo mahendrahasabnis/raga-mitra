@@ -10,11 +10,26 @@ dotenv.config();
 
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/raga-mitra';
+    const mongoURI = process.env.MONGODB_URI;
+    
+    if (!mongoURI) {
+      console.error('MONGODB_URI environment variable is not set');
+      console.error('Please configure MongoDB Atlas connection in your .env file');
+      process.exit(1);
+    }
+
+    if (mongoURI.includes('localhost') || mongoURI.includes('127.0.0.1')) {
+      console.error('Local MongoDB connection detected. Please use MongoDB Atlas only.');
+      console.error('Update MONGODB_URI in your .env file to use MongoDB Atlas connection string');
+      process.exit(1);
+    }
+
+    console.log('Connecting to MongoDB Atlas...');
     await mongoose.connect(mongoURI);
-    console.log('Connected to MongoDB');
+    console.log('Connected to MongoDB Atlas');
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error('MongoDB Atlas connection error:', error);
+    console.error('Please check your MongoDB Atlas connection string and network access');
     process.exit(1);
   }
 };

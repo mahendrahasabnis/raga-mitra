@@ -79,7 +79,7 @@ const FetchTracksButton: React.FC<FetchTracksButtonProps> = ({
   // Real YouTube search function using the API
   const searchYouTubeMusic = async (raga: any, artist: any) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+      const response = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }

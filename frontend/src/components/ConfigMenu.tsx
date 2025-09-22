@@ -4,6 +4,7 @@ import RagaConfig from './config/RagaConfig';
 import ArtistConfig from './config/ArtistConfig';
 import CreditConfig from './config/CreditConfig';
 import UserConfig from './config/UserConfig';
+import AudioManagement from './AudioManagement';
 
 interface ConfigMenuProps {
   isOpen: boolean;
@@ -24,9 +25,16 @@ const ConfigMenu: React.FC<ConfigMenuProps> = ({ isOpen, onClose, isAdmin }) => 
 
   const configModules: ConfigModule[] = [
     {
+      id: 'audio',
+      name: 'Audio Management',
+      icon: <Music className="w-5 h-5" />,
+      component: AudioManagement,
+      description: 'Upload and manage audio files with metadata extraction'
+    },
+    {
       id: 'raga',
       name: 'Raga Management',
-      icon: <Music className="w-5 h-5" />,
+      icon: <Settings className="w-5 h-5" />,
       component: RagaConfig,
       description: 'Manage raga configurations, import/export raga data'
     },

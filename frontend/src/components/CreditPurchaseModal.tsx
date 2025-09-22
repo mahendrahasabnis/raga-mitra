@@ -143,7 +143,7 @@ const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
           };
 
           // Call backend to create transaction
-          const transactionResponse = await fetch('http://localhost:3001/api/transactions', {
+          const transactionResponse = await fetch('http://localhost:3006/api/transactions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

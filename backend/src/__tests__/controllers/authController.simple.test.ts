@@ -36,11 +36,11 @@ describe('Auth Controller Logic', () => {
       const payload = { userId: '123' };
       const options = { expiresIn: '7d' };
       
-      const token = jwt.sign(payload, secret, options);
+      const token = jwt.sign(payload, secret, options as any);
       
       expect(token).toBeDefined();
       expect(typeof token).toBe('string');
-      expect(token.split('.')).toHaveLength(3); // JWT has 3 parts
+      expect((token as string).split('.')).toHaveLength(3); // JWT has 3 parts
     });
 
     it('should verify JWT token correctly', () => {
@@ -122,6 +122,8 @@ describe('Auth Controller Logic', () => {
     });
   });
 });
+
+
 
 
 

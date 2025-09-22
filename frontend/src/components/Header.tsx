@@ -88,6 +88,7 @@ const Header: React.FC<HeaderProps> = ({ onBuyCredits, onTransactionReport, onCo
                       </button>
                     )}
 
+
                 <button
                   onClick={logout}
                   className="p-2 text-white/60 hover:text-white transition-colors"

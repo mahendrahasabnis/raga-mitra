@@ -8,9 +8,11 @@ interface TrackListProps {
   tracks: any[];
   onTrackSelect: (track: any) => void;
   selectedArtist?: any;
+  currentTrack?: any;
+  isPlaying?: boolean;
 }
 
-const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedArtist }) => {
+const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedArtist, currentTrack, isPlaying }) => {
   const { user } = useAuth();
   const [ratings, setRatings] = useState<{ [key: string]: number }>({});
 
@@ -19,10 +21,11 @@ const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedAr
     return duration;
   };
 
-  const handleRateTrack = async (trackId: string, rating: number) => {
+  const handleRateTrack = async (track: any, rating: number) => {
     if (!user) return;
 
     try {
+      const trackId = track._id || track.id;
       await trackApi.rateTrack(trackId, rating);
       setRatings(prev => ({ ...prev, [trackId]: rating }));
     } catch (error) {
@@ -60,12 +63,16 @@ const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedAr
 
   const renderTrack = (track: any, index: number) => {
     const averageRating = getAverageRating(track);
-    const userRating = ratings[track._id] || 0;
+    const trackId = track._id || track.id;
+    const userRating = ratings[trackId] || 0;
+    const isCurrentTrack = currentTrack && (currentTrack._id === track._id || currentTrack.id === track.id);
     
     return (
       <div
-        key={track._id}
-        className="card hover:bg-white/20 transition-colors cursor-pointer"
+        key={trackId}
+        className={`card hover:bg-white/20 transition-colors cursor-pointer ${
+          isCurrentTrack ? 'bg-primary-600/20 border-primary-500/50' : ''
+        }`}
         onClick={() => onTrackSelect(track)}
       >
         <div className="flex items-center space-x-4">
@@ -84,7 +91,11 @@ const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedAr
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <Play className="w-6 h-6 text-white/60" />
+                {isCurrentTrack && isPlaying ? (
+                  <div className="w-6 h-6 border-2 border-white/60 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Play className="w-6 h-6 text-white/60" />
+                )}
               </div>
             )}
           </div>
@@ -131,7 +142,7 @@ const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedAr
                   key={star}
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleRateTrack(track._id, star);
+                    handleRateTrack(track, star);
                   }}
                   className="text-white/40 hover:text-yellow-400 transition-colors"
                 >

@@ -11,12 +11,16 @@ import ragaRoutes from './routes/ragas';
 import artistRoutes from './routes/artists';
 import trackRoutes from './routes/tracks';
 import transactionRoutes from './routes/transactions';
+import audioRoutes from './routes/audio';
+
+// Import services
+import { initGridFS } from './services/gridfsService';
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: '../.env' });
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3004;
 
 // Security middleware
 app.use(helmet());
@@ -70,6 +74,7 @@ app.use('/api/ragas', ragaRoutes);
 app.use('/api/artists', artistRoutes);
 app.use('/api/tracks', trackRoutes);
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/audio', audioRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -82,14 +87,29 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-// Connect to MongoDB
+// Connect to MongoDB Atlas
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/raga-mitra';
+    const mongoURI = process.env.MONGODB_URI;
+    
+    if (!mongoURI) {
+      console.error('MONGODB_URI environment variable is not set');
+      console.error('Please configure MongoDB Atlas connection in your .env file');
+      process.exit(1);
+    }
+
+    if (mongoURI.includes('localhost') || mongoURI.includes('127.0.0.1')) {
+      console.error('Local MongoDB connection detected. Please use MongoDB Atlas only.');
+      console.error('Update MONGODB_URI in your .env file to use MongoDB Atlas connection string');
+      process.exit(1);
+    }
+
+    console.log('Connecting to MongoDB Atlas...');
     await mongoose.connect(mongoURI);
-    console.log('MongoDB connected successfully');
+    console.log('MongoDB Atlas connected successfully');
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error('MongoDB Atlas connection error:', error);
+    console.error('Please check your MongoDB Atlas connection string and network access');
     process.exit(1);
   }
 };
@@ -97,6 +117,10 @@ const connectDB = async () => {
 // Start server
 const startServer = async () => {
   await connectDB();
+  
+  // Initialize GridFS
+  initGridFS();
+  console.log('GridFS initialized');
   
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

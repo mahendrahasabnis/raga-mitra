@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 // import { User, AuthResponse } from '../types';
 import { authApi } from '../services/api';
 
 interface AuthContextType {
   user: any | null;
   isAuthenticated: boolean;
+  token: string | null;
   login: (phone: string, pin: string) => Promise<boolean>;
   signup: (phone: string, pin: string) => Promise<boolean>;
   logout: () => void;
@@ -28,15 +29,17 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<any | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
+    const storedToken = localStorage.getItem('token');
     const userData = localStorage.getItem('user');
     
-    if (token && userData) {
+    if (storedToken && userData) {
       try {
         const parsedUser = JSON.parse(userData);
         setUser(parsedUser);
+        setToken(storedToken);
         setIsAuthenticated(true);
       } catch (error) {
         console.error('Error parsing user data:', error);
@@ -50,10 +53,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const response = await authApi.login(phone, pin);
       if (response.token && response.user) {
-          const { token, user: userData } = response;
-          localStorage.setItem('token', token);
+          const { token: newToken, user: userData } = response;
+          localStorage.setItem('token', newToken);
           localStorage.setItem('user', JSON.stringify(userData));
           setUser(userData);
+          setToken(newToken);
           setIsAuthenticated(true);
         return true;
       }
@@ -68,10 +72,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const response = await authApi.signup(phone, pin);
       if (response.token && response.user) {
-        const { token, user: userData } = response;
-        localStorage.setItem('token', token);
+        const { token: newToken, user: userData } = response;
+        localStorage.setItem('token', newToken);
         localStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
+        setToken(newToken);
         setIsAuthenticated(true);
         return true;
       }
@@ -86,6 +91,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    setToken(null);
     setIsAuthenticated(false);
   };
 
@@ -100,6 +106,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     isAuthenticated,
+    token,
     login,
     signup,
     logout,

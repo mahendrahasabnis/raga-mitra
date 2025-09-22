@@ -1,7 +1,7 @@
 import axios from 'axios';
 // import type { AuthResponse, Raga, Artist, Track, ApiResponse } from '../types/index.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3006/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -104,6 +104,25 @@ export const trackApi = {
 
   useCredit: async () => {
     const response = await api.post('/tracks/use-credit');
+    return response.data;
+  },
+};
+
+export const audioApi = {
+  getAudioFiles: async () => {
+    const response = await api.get('/audio/files');
+    return response.data;
+  },
+
+  getAudioStream: async (fileId: string) => {
+    const response = await api.get(`/audio/stream/${fileId}`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  deleteAudioFile: async (fileId: string) => {
+    const response = await api.delete(`/audio/${fileId}`);
     return response.data;
   },
 };

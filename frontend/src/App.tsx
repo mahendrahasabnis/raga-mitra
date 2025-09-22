@@ -17,6 +17,7 @@ import ConfigMenu from './components/ConfigMenu';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Music, CreditCard } from 'lucide-react';
 import { getCurrentSeason, getCurrentMarathiMonth, formatSeasonDisplay, formatMonthDisplay } from './utils/marathiCalendar';
+import { ragaApi, artistApi } from './services/api';
 // import { Raga, Artist, Track } from './types';
 
 function AppContent() {
@@ -32,9 +33,11 @@ function AppContent() {
   const [selectedRaga, setSelectedRaga] = useState<any | null>(null);
   const [selectedArtist, setSelectedArtist] = useState<any | null>(null);
   const [currentTrack, setCurrentTrack] = useState<any | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [tracks, setTracks] = useState<any[]>([]);
   const [showNeoPlay, setShowNeoPlay] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
   const [isAudioMode, setIsAudioMode] = useState(false);
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showTransactionModal, setShowTransactionModal] = useState(false);
@@ -45,7 +48,13 @@ function AppContent() {
   const [artists, setArtists] = useState<any[]>([]);
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
   
-  console.log('App render:', { showCreditModal, userCredits: user?.credits });
+  console.log('App render:', { 
+    showCreditModal, 
+    userCredits: user?.credits, 
+    ragasCount: ragas.length, 
+    artistsCount: artists.length,
+    isAuthenticated 
+  });
 
   // Update time every minute
   useEffect(() => {
@@ -59,41 +68,31 @@ function AppContent() {
   useEffect(() => {
     const fetchRagas = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/ragas', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setRagas(data);
-        }
+        console.log('Fetching ragas...', { isAuthenticated, token: localStorage.getItem('token') });
+        const data = await ragaApi.getRagas();
+        console.log('Ragas fetched successfully:', data.length, 'ragas');
+        setRagas(data);
       } catch (error) {
         console.error('Error fetching ragas:', error);
       }
     };
     fetchRagas();
-  }, []);
+  }, [isAuthenticated]);
 
   // Load artists data
   useEffect(() => {
     const fetchArtists = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/artists', {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setArtists(data);
-        }
+        console.log('Fetching artists...', { isAuthenticated, token: localStorage.getItem('token') });
+        const data = await artistApi.getArtists();
+        console.log('Artists fetched successfully:', data.length, 'artists');
+        setArtists(data);
       } catch (error) {
         console.error('Error fetching artists:', error);
       }
     };
     fetchArtists();
-  }, []);
+  }, [isAuthenticated]);
 
   // Auto-select random starred raga and artist when data is loaded
   useEffect(() => {
@@ -204,6 +203,7 @@ function AppContent() {
     return <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />;
   }
 
+
   return (
         <div className="min-h-screen flex flex-col">
           <Header 
@@ -218,6 +218,7 @@ function AppContent() {
         <RagaSelector
           selectedRaga={selectedRaga}
           onRagaSelect={setSelectedRaga}
+          ragas={ragas}
         />
 
         {/* Artist Carousel */}
@@ -225,6 +226,7 @@ function AppContent() {
           selectedRaga={selectedRaga}
           selectedArtist={selectedArtist}
           onArtistSelect={setSelectedArtist}
+          artists={artists}
         />
 
         {/* Action Buttons */}
@@ -271,6 +273,7 @@ function AppContent() {
                 setIsAudioMode(true);
               }}
               onTrackSelect={setCurrentTrack}
+              onPlayingChange={setIsPlaying}
             />
           </div>
           
@@ -320,6 +323,8 @@ function AppContent() {
                 tracks={tracks}
                 onTrackSelect={setCurrentTrack}
                 selectedArtist={selectedArtist}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
               />
             )}
           </>
