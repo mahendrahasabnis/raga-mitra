@@ -151,19 +151,27 @@ export const uploadAudio = async (req: Request, res: Response) => {
 export const streamAudio = async (req: Request, res: Response) => {
   try {
     const { fileId } = req.params;
+    console.log('Streaming audio file with ID:', fileId);
 
     const { stream, metadata } = await getAudioFile(fileId);
+    console.log('Audio file found, metadata:', {
+      filename: metadata.filename,
+      contentType: metadata.contentType,
+      length: metadata.length
+    });
 
     // Set appropriate headers
     res.set({
       'Content-Type': metadata.contentType || 'audio/mpeg',
       'Content-Length': metadata.length,
-      'Accept-Ranges': 'bytes'
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': 'public, max-age=3600'
     });
 
     // Handle range requests for audio streaming
     const range = req.headers.range;
     if (range) {
+      console.log('Range request:', range);
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : metadata.length - 1;
@@ -185,12 +193,23 @@ export const streamAudio = async (req: Request, res: Response) => {
 
       partialStream.pipe(res);
     } else {
+      console.log('Full file request');
       stream.pipe(res);
     }
 
+    // Handle stream errors
+    stream.on('error', (error) => {
+      console.error('Stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Stream error occurred' });
+      }
+    });
+
   } catch (error) {
     console.error('Error streaming audio file:', error);
-    res.status(404).json({ error: 'Audio file not found' });
+    if (!res.headersSent) {
+      res.status(404).json({ error: 'Audio file not found' });
+    }
   }
 };
 

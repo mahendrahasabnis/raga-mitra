@@ -116,7 +116,8 @@ class YouTubeService {
     } catch (error: any) {
       console.error('YouTube search error:', error);
       if (error.message.includes('quota')) {
-        throw new Error('YouTube API quota exceeded. Please try again later.');
+        console.log('YouTube API quota exceeded, falling back to sample tracks');
+        return this.getSampleTracks(raga, artist, filters);
       }
       return {
         tracks: [],
