@@ -86,6 +86,17 @@ export const uploadAudio = async (req: Request, res: Response) => {
     // Upload file to GridFS
     const fileId = await uploadAudioFile(req.file, audioMetadata);
 
+    // Generate unique searchKey to avoid duplicates
+    const baseSearchKey = `${parsedMetadata.raga}-${parsedMetadata.artist}-${parsedMetadata.title}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+    let searchKey = baseSearchKey;
+    let counter = 1;
+    
+    // Check if searchKey already exists and add counter if needed
+    while (await Track.findOne({ searchKey })) {
+      searchKey = `${baseSearchKey}-${counter}`;
+      counter++;
+    }
+
     // Create track record
     const track = new Track({
       raga: parsedMetadata.raga,
@@ -98,7 +109,7 @@ export const uploadAudio = async (req: Request, res: Response) => {
       isCurated: false,
       ratings: [],
       thumbnail: '', // Can be added later
-      searchKey: `${parsedMetadata.raga}-${parsedMetadata.artist}`.toLowerCase()
+      searchKey: searchKey
     });
 
     await track.save();
@@ -122,8 +133,17 @@ export const uploadAudio = async (req: Request, res: Response) => {
       }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error uploading audio file:', error);
+    
+    // Handle specific MongoDB duplicate key error
+    if (error.code === 11000) {
+      return res.status(409).json({ 
+        error: 'A track with similar metadata already exists. Please check the filename format or try a different file.',
+        details: error.keyValue
+      });
+    }
+    
     res.status(500).json({ error: 'Failed to upload audio file' });
   }
 };

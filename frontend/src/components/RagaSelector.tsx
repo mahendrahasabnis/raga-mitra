@@ -97,7 +97,7 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
       filteredRagas = sortedRagas.filter(raga => {
         const searchLower = searchTerm.toLowerCase();
         const ragaName = raga.name.toLowerCase();
-        const popularity = raga.popularity.toLowerCase();
+        const popularity = raga.popularity ? raga.popularity.toLowerCase() : '';
         const timeRange = formatTimeRange(raga.idealHours).toLowerCase();
         
         // Search by raga name

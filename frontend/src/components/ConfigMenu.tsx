@@ -4,7 +4,7 @@ import RagaConfig from './config/RagaConfig';
 import ArtistConfig from './config/ArtistConfig';
 import CreditConfig from './config/CreditConfig';
 import UserConfig from './config/UserConfig';
-import AudioManagement from './AudioManagement';
+import AudioFileUpload from './AudioFileUpload';
 
 interface ConfigMenuProps {
   isOpen: boolean;
@@ -28,7 +28,7 @@ const ConfigMenu: React.FC<ConfigMenuProps> = ({ isOpen, onClose, isAdmin }) => 
       id: 'audio',
       name: 'Audio Management',
       icon: <Music className="w-5 h-5" />,
-      component: AudioManagement,
+      component: AudioFileUpload,
       description: 'Upload and manage audio files with metadata extraction'
     },
     {

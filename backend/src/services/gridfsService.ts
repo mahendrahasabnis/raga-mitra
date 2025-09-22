@@ -149,6 +149,7 @@ export const listAudioFiles = async (): Promise<AudioFileMetadata[]> => {
     const files = await gridFSBucket.find({}).toArray();
     
     return files.map(file => ({
+      _id: file._id.toString(),
       filename: file.filename,
       originalName: file.metadata?.originalName || file.filename,
       contentType: file.metadata?.contentType || file.contentType,

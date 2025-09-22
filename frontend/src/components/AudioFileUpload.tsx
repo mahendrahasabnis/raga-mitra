@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface AudioFileUploadProps {
@@ -23,6 +23,85 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [existingFiles, setExistingFiles] = useState<any[]>([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [deletingFiles, setDeletingFiles] = useState<Set<string>>(new Set());
+
+  // Fetch existing audio files
+  const fetchExistingFiles = async () => {
+    if (!token) return;
+    
+    setLoadingFiles(true);
+    try {
+      const response = await fetch('http://localhost:3006/api/audio/files', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Fetched files data:', data);
+        setExistingFiles(data.files || []);
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to fetch existing files:', response.status, errorText);
+      }
+    } catch (error) {
+      console.error('Error fetching existing files:', error);
+    } finally {
+      setLoadingFiles(false);
+    }
+  };
+
+  // Fetch files on component mount
+  useEffect(() => {
+    fetchExistingFiles();
+  }, [token]);
+
+  // Delete audio file
+  const deleteAudioFile = async (fileId: string) => {
+    if (!token) {
+      alert('No authentication token available. Please log in again.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this audio file? This action cannot be undone.')) {
+      return;
+    }
+
+    // Add to deleting files set
+    setDeletingFiles(prev => new Set(prev).add(fileId));
+
+    try {
+      const response = await fetch(`http://localhost:3006/api/audio/${fileId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        console.log('File deleted successfully');
+        // Refresh the file list
+        fetchExistingFiles();
+      } else {
+        const errorText = await response.text();
+        console.error('Failed to delete file:', response.status, errorText);
+        alert('Failed to delete file. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      alert('Error deleting file. Please try again.');
+    } finally {
+      // Remove from deleting files set
+      setDeletingFiles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(fileId);
+        return newSet;
+      });
+    }
+  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
@@ -129,6 +208,9 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
         if (onUploadSuccess) {
           onUploadSuccess(result.track);
         }
+        
+        // Refresh the existing files list
+        fetchExistingFiles();
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Upload failed';
         
@@ -287,6 +369,69 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
           </div>
         </div>
       )}
+
+      {/* Existing Files */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-gray-700">
+            Uploaded Files ({existingFiles.length})
+          </h3>
+          <button
+            onClick={fetchExistingFiles}
+            disabled={loadingFiles}
+            className="text-sm text-blue-600 hover:text-blue-800 disabled:text-gray-400"
+          >
+            {loadingFiles ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
+        
+        {loadingFiles ? (
+          <div className="text-center py-4">
+            <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <p className="text-sm text-gray-500 mt-2">Loading files...</p>
+          </div>
+        ) : existingFiles.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No audio files uploaded yet.</p>
+          </div>
+        ) : (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {existingFiles.map((file, index) => (
+              <div key={file._id || index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <span className="text-lg">🎵</span>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-800">{file.originalName || file.filename || 'Unknown file'}</p>
+                    <p className="text-sm text-gray-500">
+                      {file.size ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : 'Size unknown'}
+                    </p>
+                    {file.raga && file.artist && (
+                      <p className="text-xs text-blue-600">
+                        {file.raga} - {file.artist}
+                      </p>
+                    )}
+                    {file.uploadDate && (
+                      <p className="text-xs text-gray-400">
+                        Uploaded: {new Date(file.uploadDate).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-green-600 text-sm">✅ Uploaded</span>
+                  <button
+                    onClick={() => deleteAudioFile(file._id)}
+                    disabled={deletingFiles.has(file._id)}
+                    className="text-red-500 hover:text-red-700 disabled:text-gray-400 disabled:cursor-not-allowed text-sm"
+                  >
+                    {deletingFiles.has(file._id) ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Action Buttons */}
       <div className="flex space-x-4">
