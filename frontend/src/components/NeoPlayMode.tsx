@@ -3,21 +3,29 @@ import React, { useState } from 'react';
 import { audioApi } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Star, AlertCircle, Play, Pause, X } from 'lucide-react';
+import { audioCacheService } from '../services/audioCacheService';
 
 interface NeoPlayModeProps {
+  selectedRaga: any | null;
   onTracksFound: (tracks: any[]) => void;
   onTrackSelect: (track: any) => void;
   onPlayingChange?: (isPlaying: boolean) => void;
+  onPlayerControl?: (action: 'play' | 'pause' | 'previous' | 'next') => void;
 }
 
-const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect, onPlayingChange }) => {
+const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ 
+  selectedRaga,
+  onTracksFound, 
+  onTrackSelect, 
+  onPlayingChange,
+  onPlayerControl 
+}) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [currentTrack, setCurrentTrack] = useState<any>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [tracks, setTracks] = useState<any[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
 
   // Show error popup
   const showError = (errorMessage: string) => {
@@ -31,6 +39,25 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
     setError('');
   };
 
+
+  const handlePrevious = () => {
+    if (tracks.length > 0) {
+      const prevIndex = currentTrackIndex > 0 ? currentTrackIndex - 1 : tracks.length - 1;
+      setCurrentTrackIndex(prevIndex);
+      onTrackSelect(tracks[prevIndex]);
+    }
+    onPlayerControl?.('previous');
+  };
+
+  const handleNext = () => {
+    if (tracks.length > 0) {
+      const nextIndex = currentTrackIndex < tracks.length - 1 ? currentTrackIndex + 1 : 0;
+      setCurrentTrackIndex(nextIndex);
+      onTrackSelect(tracks[nextIndex]);
+    }
+    onPlayerControl?.('next');
+  };
+
   const handleNeoPlay = async () => {
     if (!user) {
       showError('Please login to use this feature');
@@ -42,9 +69,16 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
       return;
     }
 
+    if (!selectedRaga) {
+      showError('Please select a raga first to use NeoPlay.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      console.log('Starting NeoPlay for raga:', selectedRaga.name);
+      
       // First try to get uploaded audio files from the database
       const response = await audioApi.getAudioFiles();
       const audioFiles = response.files || [];
@@ -52,13 +86,27 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
       let tracks = [];
       
       if (audioFiles.length > 0) {
-        // Convert uploaded audio files to track format
-        tracks = audioFiles
+        // Filter audio files by selected raga
+        const filteredAudioFiles = audioFiles.filter((file: any) => {
+          const fileRaga = file.raga ? file.raga.toLowerCase() : '';
+          const selectedRagaName = selectedRaga.name ? selectedRaga.name.toLowerCase() : '';
+          
+          // Check for exact match or partial match
+          return fileRaga.includes(selectedRagaName) || 
+                 selectedRagaName.includes(fileRaga) ||
+                 fileRaga === selectedRagaName;
+        });
+
+        console.log(`Found ${filteredAudioFiles.length} audio files for raga: ${selectedRaga.name}`);
+
+        // Convert filtered uploaded audio files to track format
+        tracks = filteredAudioFiles
           .map((file: any) => ({
-            _id: file.filename,
+            _id: file._id,
             title: file.title || file.originalName,
-            audioUrl: `http://localhost:3006/api/audio/stream/${file.filename}`,
+            audioUrl: `http://localhost:3006/api/audio/stream/${file._id}`,
             duration: file.duration || 'Unknown',
+            durationSeconds: file.durationSeconds || 0,
             likes: Math.floor(Math.random() * 10000) + 1000,
             raga: file.raga || 'Unknown',
             artist: file.artist || 'Unknown Artist',
@@ -70,13 +118,29 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
             originalName: file.originalName,
             size: file.size,
             uploadDate: file.uploadDate,
-            isUploadedAudio: true // Flag to identify uploaded audio
+            isUploadedAudio: true,
+            // Add metadata for better player experience
+            metadata: {
+              title: file.title || file.originalName,
+              artist: file.artist || 'Unknown Artist',
+              raga: file.raga || 'Unknown',
+              event: file.event || 'Unknown Event',
+              duration: file.durationSeconds || 0,
+              size: file.size || 0
+            }
           }))
           .sort((a: any, b: any) => b.likes - a.likes)
           .slice(0, 10);
-      } else {
-        // Fallback to YouTube tracks if no uploaded audio files
-        const youtubeResponse = await fetch('http://localhost:3006/api/tracks/youtube/search?raga=Yaman&artist=Pandit%20Jasraj&minDuration=1800&maxResults=10&orderBy=relevance', {
+
+        // Start background caching
+        audioCacheService.preloadAudio(tracks);
+      }
+      
+      // If no uploaded audio files found for the raga, try YouTube search
+      if (tracks.length === 0) {
+        console.log('No uploaded audio files found, searching YouTube for raga:', selectedRaga.name);
+        
+        const youtubeResponse = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(selectedRaga.name)}&minDuration=1800&maxResults=10&orderBy=relevance`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
@@ -93,11 +157,14 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
       }
       
       if (tracks.length > 0) {
+        setTracks(tracks);
+        setCurrentTrackIndex(0);
         onTracksFound(tracks);
-        // Auto-play first track
-        playTrack(tracks[0]);
+        // Set first track as current but don't auto-play
+        onTrackSelect(tracks[0]);
+        console.log(`NeoPlay loaded ${tracks.length} tracks for raga: ${selectedRaga.name}`);
       } else {
-        showError('No audio tracks available at the moment.');
+        showError(`No audio tracks found for raga: ${selectedRaga.name}. Please try a different raga or upload some audio files.`);
       }
     } catch (err) {
       console.error('NeoPlay error:', err);
@@ -107,102 +174,14 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
     }
   };
 
-  // Play track function
-  const playTrack = (track: any) => {
-    // Stop current track if playing
-    if (audioElement) {
-      audioElement.pause();
-      audioElement.currentTime = 0;
-    }
 
-    if (track.isUploadedAudio) {
-      // Handle uploaded audio files - stream from GridFS
-      const audio = new Audio(track.audioUrl);
-      audio.preload = 'metadata';
-      
-      // Set up event listeners
-      audio.addEventListener('loadstart', () => {
-        console.log('Loading uploaded audio...');
-      });
-      
-      audio.addEventListener('canplay', () => {
-        console.log('Uploaded audio ready to play');
-        audio.play().then(() => {
-          setIsPlaying(true);
-          setCurrentTrack(track);
-          onTrackSelect(track);
-          onPlayingChange?.(true);
-        }).catch((err) => {
-          console.error('Error playing uploaded audio:', err);
-          showError('Error playing audio. Please try again.');
-        });
-      });
-      
-      audio.addEventListener('ended', () => {
-        console.log('Uploaded audio ended');
-        setIsPlaying(false);
-        setCurrentTrack(null);
-        onPlayingChange?.(false);
-      });
-      
-      audio.addEventListener('error', (err) => {
-        console.error('Uploaded audio error:', err);
-        showError('Error loading audio. Please try again.');
-        setIsPlaying(false);
-      });
-      
-      // Store reference to audio element
-      setAudioElement(audio);
-    } else {
-      // Handle YouTube tracks - use YouTube URL directly
-      console.log('Playing YouTube track:', track.title);
-      console.log('YouTube URL:', track.audioUrl);
-      
-      // For YouTube tracks, we can't play them directly in an Audio element
-      // Instead, we'll just set the track as current and let the parent handle YouTube playback
-      setCurrentTrack(track);
-      onTrackSelect(track);
-      onPlayingChange?.(true);
-      setIsPlaying(true);
-      
-      // Show a message that this is a YouTube track
-      console.log('YouTube track selected. Use the YouTube player to play this track.');
-    }
-  };
-
-  // Toggle play/pause
-  const togglePlayPause = () => {
-    if (!currentTrack) return;
-    
-    if (currentTrack.isUploadedAudio) {
-      // Handle uploaded audio files
-      if (!audioElement) return;
-      
-      if (isPlaying) {
-        audioElement.pause();
-        setIsPlaying(false);
-        onPlayingChange?.(false);
-      } else {
-        audioElement.play().then(() => {
-          setIsPlaying(true);
-          onPlayingChange?.(true);
-        }).catch((err) => {
-          console.error('Error playing audio:', err);
-          showError('Error playing audio. Please try again.');
-        });
-      }
-    } else {
-      // Handle YouTube tracks - show message
-      showError('YouTube tracks require the YouTube player. Please use the main track list to play YouTube videos.');
-    }
-  };
 
   return (
     <div className="space-y-4">
       <div className="text-center">
         <button
           onClick={handleNeoPlay}
-          disabled={loading || !user || user.credits <= 0}
+          disabled={loading || !user || user.credits <= 0 || !selectedRaga}
           className="btn-secondary text-sm px-6 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
         >
           {loading ? (
@@ -213,46 +192,12 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({ onTracksFound, onTrackSelect,
           ) : (
             <>
               <Star className="w-4 h-4" />
-              <span>NeoPlay</span>
+              <span>NeoPlay {selectedRaga ? `(${selectedRaga.name})` : ''}</span>
             </>
           )}
         </button>
       </div>
 
-      {/* Current Playing Track */}
-      {currentTrack && (
-        <div className="bg-white/10 rounded-lg p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={togglePlayPause}
-                className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center hover:bg-primary-700 transition-colors"
-              >
-                {isPlaying ? (
-                  <Pause className="w-5 h-5 text-white" />
-                ) : (
-                  <Play className="w-5 h-5 text-white ml-1" />
-                )}
-              </button>
-              <div>
-                <h3 className="font-semibold text-white">{currentTrack.title}</h3>
-                <p className="text-sm text-white/60">
-                  {currentTrack.raga} • {currentTrack.artist}
-                </p>
-              </div>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-white/60">{currentTrack.duration}</p>
-              <p className="text-xs text-white/40">{currentTrack.event}</p>
-            </div>
-          </div>
-          
-          {/* Progress bar placeholder */}
-          <div className="w-full bg-white/20 rounded-full h-1">
-            <div className="bg-primary-600 h-1 rounded-full" style={{ width: '0%' }}></div>
-          </div>
-        </div>
-      )}
 
       {/* Error Modal */}
       {showErrorModal && (

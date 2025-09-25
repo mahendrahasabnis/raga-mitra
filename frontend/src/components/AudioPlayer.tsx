@@ -1,173 +1,498 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, Volume2, VolumeX, SkipBack, SkipForward } from 'lucide-react';
 
 interface AudioPlayerProps {
-  track: any;
-  onClose: () => void;
+  currentTrack: any | null;
+  onPrevious: () => void;
+  onNext: () => void;
+  onTrackSelect: (track: any) => void;
 }
 
-const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+const AudioPlayer: React.FC<AudioPlayerProps> = ({
+  currentTrack,
+  onPrevious,
+  onNext,
+  onTrackSelect
+}) => {
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isCaching, setIsCaching] = useState(false);
+  const [cacheProgress, setCacheProgress] = useState(0);
+  const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
+  const [youtubePlayerVisible, setYoutubePlayerVisible] = useState(false);
+  const progressRef = useRef<HTMLDivElement>(null);
 
+  // Create and manage audio element with immediate caching
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
+    if (currentTrack) {
+      // Handle YouTube tracks differently
+      if (!currentTrack.isUploadedAudio) {
+        console.log('YouTube track selected:', currentTrack.title);
+        setDuration(0);
+        setCurrentTime(0);
+        setIsPlaying(false);
+        setIsLoading(false);
+        setIsCaching(false);
+        setCacheProgress(0);
+        setAudioElement(null);
+        setYoutubePlayerVisible(true);
+        return;
+      }
 
-    const updateTime = () => setCurrentTime(audio.currentTime);
-    const updateDuration = () => setDuration(audio.duration);
-    const handleEnded = () => setIsPlaying(false);
+      setIsCaching(true);
+      setCacheProgress(0);
+      
+      // Create new audio element
+      const audio = new Audio();
+      audio.crossOrigin = 'anonymous';
+      audio.preload = 'auto'; // Preload entire file
+      audio.autoplay = false; // Explicitly disable autoplay
+      
+      // Set up event listeners
+      const handleLoadStart = () => {
+        setIsLoading(true);
+        setIsCaching(true);
+        console.log('Audio caching started');
+      };
 
-    audio.addEventListener('timeupdate', updateTime);
-    audio.addEventListener('loadedmetadata', updateDuration);
-    audio.addEventListener('ended', handleEnded);
+      const handleProgress = () => {
+        if (audio.buffered.length > 0) {
+          const bufferedEnd = audio.buffered.end(audio.buffered.length - 1);
+          const duration = audio.duration;
+          if (duration > 0) {
+            const progress = (bufferedEnd / duration) * 100;
+            setCacheProgress(progress);
+            console.log(`Cache progress: ${progress.toFixed(1)}%`);
+          }
+        }
+      };
 
-    return () => {
-      audio.removeEventListener('timeupdate', updateTime);
-      audio.removeEventListener('loadedmetadata', updateDuration);
-      audio.removeEventListener('ended', handleEnded);
-    };
-  }, []);
+      const handleLoadedMetadata = () => {
+        setDuration(audio.duration);
+        console.log('Audio metadata loaded, duration:', audio.duration);
+      };
 
-  const togglePlayPause = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
+      const handleCanPlay = () => {
+        console.log('Audio can play (partially cached)');
+        setIsLoading(false);
+        // Don't auto-play, just indicate it's ready
+      };
+
+      const handleCanPlayThrough = () => {
+        console.log('Audio fully cached and ready');
+        setIsCaching(false);
+        setIsLoading(false);
+        setCacheProgress(100);
+        // Don't auto-play, just indicate it's ready
+      };
+
+      const handleTimeUpdate = () => {
+        if (!isDragging) {
+          setCurrentTime(audio.currentTime);
+        }
+      };
+
+      const handleEnded = () => {
+        setCurrentTime(0);
+        setIsPlaying(false);
+        console.log('Audio ended');
+      };
+
+      const handleError = (e: any) => {
+        console.error('Audio error:', e);
+        setIsLoading(false);
+        setIsCaching(false);
+        setIsPlaying(false);
+      };
+
+      const handlePlay = () => {
+        // This should only happen when user clicks play
+        console.log('Audio play event triggered');
+      };
+
+      const handlePause = () => {
+        // This should only happen when user clicks pause
+        console.log('Audio pause event triggered');
+      };
+
+      audio.addEventListener('loadstart', handleLoadStart);
+      audio.addEventListener('progress', handleProgress);
+      audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.addEventListener('canplay', handleCanPlay);
+      audio.addEventListener('canplaythrough', handleCanPlayThrough);
+      audio.addEventListener('timeupdate', handleTimeUpdate);
+      audio.addEventListener('ended', handleEnded);
+      audio.addEventListener('error', handleError);
+      audio.addEventListener('play', handlePlay);
+      audio.addEventListener('pause', handlePause);
+
+      // Ensure audio is paused initially
+      audio.pause();
+
+      // Set source and start caching immediately
+      if (currentTrack.audioUrl) {
+        audio.src = currentTrack.audioUrl;
+        audio.load();
+        console.log('Started caching audio file:', currentTrack.title);
+      }
+
+      setAudioElement(audio);
+
+      // Cleanup
+      return () => {
+        audio.removeEventListener('loadstart', handleLoadStart);
+        audio.removeEventListener('progress', handleProgress);
+        audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+        audio.removeEventListener('canplay', handleCanPlay);
+        audio.removeEventListener('canplaythrough', handleCanPlayThrough);
+        audio.removeEventListener('timeupdate', handleTimeUpdate);
+        audio.removeEventListener('ended', handleEnded);
+        audio.removeEventListener('error', handleError);
+        audio.removeEventListener('play', handlePlay);
+        audio.removeEventListener('pause', handlePause);
+        audio.pause();
+        audio.src = '';
+      };
+    } else {
+      setAudioElement(null);
+      setDuration(0);
+      setCurrentTime(0);
+      setIsPlaying(false);
+      setIsLoading(false);
+      setIsCaching(false);
+      setCacheProgress(0);
+    }
+  }, [currentTrack, isDragging]);
+
+  // Handle play/pause - now seamless since file is cached
+  const handlePlayPause = async () => {
+    // Handle YouTube tracks
+    if (currentTrack && !currentTrack.isUploadedAudio) {
+      if (isPlaying) {
+        setIsPlaying(false);
+        setYoutubePlayerVisible(false);
+        console.log('YouTube track paused (UI only)');
+      } else {
+        // Show YouTube player
+        setYoutubePlayerVisible(true);
+        setIsPlaying(true);
+        console.log('Showing YouTube player for:', currentTrack.title);
+      }
+      return;
+    }
+
+    if (!audioElement) return;
 
     if (isPlaying) {
-      audio.pause();
+      audioElement.pause();
+      setIsPlaying(false);
+      console.log('Audio paused');
     } else {
-      audio.play();
+      try {
+        // Check if audio is ready to play
+        if (audioElement.readyState < 2) {
+          console.log('Audio not ready, waiting...');
+          setIsLoading(true);
+          
+          // Wait for audio to be ready
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error('Audio loading timeout'));
+            }, 10000);
+
+            audioElement.addEventListener('canplay', () => {
+              clearTimeout(timeout);
+              resolve(void 0);
+            });
+
+            audioElement.addEventListener('error', (e) => {
+              clearTimeout(timeout);
+              reject(e);
+            });
+          });
+        }
+
+        // Ensure audio is paused before playing
+        audioElement.pause();
+        await audioElement.play();
+        setIsPlaying(true);
+        setIsLoading(false);
+        console.log('Audio started playing from cache (user initiated)');
+      } catch (err) {
+        console.error('Error playing audio:', err);
+        setIsLoading(false);
+        setIsPlaying(false);
+      }
     }
-    setIsPlaying(!isPlaying);
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const newTime = parseFloat(e.target.value);
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const newVolume = parseFloat(e.target.value);
-    audio.volume = newVolume;
+  // Handle volume change
+  const handleVolumeChange = (newVolume: number) => {
     setVolume(newVolume);
+    if (audioElement) {
+      audioElement.volume = newVolume;
+    }
+    if (isMuted && newVolume > 0) {
+      setIsMuted(false);
+    }
   };
 
+  // Handle mute toggle
+  const handleMuteToggle = () => {
+    if (audioElement) {
+      if (isMuted) {
+        audioElement.volume = volume;
+        setIsMuted(false);
+      } else {
+        audioElement.volume = 0;
+        setIsMuted(true);
+      }
+    }
+  };
+
+  // Handle progress bar click
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!currentTrack || !progressRef.current || !audioElement) return;
+
+    const rect = progressRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+    const clickTime = (clickX / width) * duration;
+
+    audioElement.currentTime = clickTime;
+    setCurrentTime(clickTime);
+  };
+
+  // Format time in MM:SS
   const formatTime = (time: number) => {
+    if (isNaN(time) || !isFinite(time)) return '0:00';
     const minutes = Math.floor(time / 60);
     const seconds = Math.floor(time % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+  // Extract YouTube video ID from URL
+  const getYouTubeVideoId = (url: string) => {
+    if (!url) return null;
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = url.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : null;
+  };
+
+  if (!currentTrack) {
+    return (
+      <div className="bg-white/10 rounded-lg p-4 mb-6">
+        <div className="text-center text-white/60">
+          <p>No track selected</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full mb-6 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 p-6">
-      {/* Track Info */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-4">
-          <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-            </svg>
+    <div className="space-y-4">
+      {/* YouTube Player */}
+      {youtubePlayerVisible && currentTrack && !currentTrack.isUploadedAudio && (
+        <div className="bg-white/10 rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-white font-semibold">📺 YouTube Player</h3>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => {
+                  setYoutubePlayerVisible(false);
+                  setIsPlaying(false);
+                }}
+                className="text-white/70 hover:text-white transition-colors text-sm px-3 py-1 bg-white/10 rounded hover:bg-white/20"
+              >
+                Back to Audio Player
+              </button>
+              <button
+                onClick={() => {
+                  setYoutubePlayerVisible(false);
+                  setIsPlaying(false);
+                }}
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
           </div>
-          <div>
-            <h3 className="text-lg font-semibold text-white truncate max-w-md">
-              {track.title}
-            </h3>
-            <p className="text-sm text-white/60">
-              {track.raga && track.artist ? `${track.raga} • ${track.artist}` : 'Classical Music'}
-            </p>
-            {track.isCurated && (
-              <span className="inline-block mt-1 text-xs bg-yellow-500/20 text-yellow-300 px-2 py-1 rounded-full">
-                Curated
-              </span>
-            )}
+          <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+            <iframe
+              className="absolute top-0 left-0 w-full h-full rounded-lg"
+              src={`https://www.youtube.com/embed/${getYouTubeVideoId(currentTrack.audioUrl)}?autoplay=1&rel=0&modestbranding=1`}
+              title={currentTrack.title}
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+          <div className="mt-3 text-sm text-white/70">
+            <p className="font-medium">{currentTrack.title}</p>
+            <p className="text-xs">{currentTrack.artist} • {currentTrack.raga}</p>
+            <p className="text-xs text-yellow-400 mt-1">🎵 Audio player hidden while video is playing</p>
           </div>
         </div>
-        
-        <button
-          onClick={onClose}
-          className="w-8 h-8 bg-black/70 hover:bg-black/90 text-white rounded-full flex items-center justify-center transition-all duration-200"
-          title="Close Player"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+      )}
 
-      {/* Audio Player */}
-      <div className="space-y-4">
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <input
-            type="range"
-            min="0"
-            max={duration || 0}
-            value={currentTime}
-            onChange={handleSeek}
-            className="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
-          />
-          <div className="flex justify-between text-xs text-white/60">
-            <span>{formatTime(currentTime)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
+      {/* Main Audio Player - Only show when YouTube player is not visible */}
+      {!youtubePlayerVisible && (
+        <div className="bg-white/10 rounded-lg p-4 mb-6">
+          <div className="flex items-center space-x-4">
+        {/* Track Info */}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-white font-semibold truncate">
+            {currentTrack.title || 'Unknown Title'}
+          </h3>
+          <p className="text-white/70 text-sm truncate">
+            {currentTrack.artist || 'Unknown Artist'} • {currentTrack.raga || 'Unknown Raga'}
+          </p>
+          {currentTrack.event && (
+            <p className="text-white/50 text-xs truncate">
+              {currentTrack.event}
+            </p>
+          )}
         </div>
 
         {/* Controls */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={togglePlayPause}
-              className="w-12 h-12 bg-primary-600 hover:bg-primary-700 rounded-full flex items-center justify-center transition-colors"
-            >
-              {isPlaying ? (
-                <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
-                </svg>
-              ) : (
-                <svg className="w-6 h-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z"/>
-                </svg>
-              )}
-            </button>
-            
-            <div className="flex items-center space-x-2">
-              <svg className="w-4 h-4 text-white/60" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
-              </svg>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={volume}
-                onChange={handleVolumeChange}
-                className="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer slider"
-              />
-            </div>
-          </div>
+        <div className="flex items-center space-x-2">
+          {/* Previous Button */}
+          <button
+            onClick={onPrevious}
+            className="p-2 text-white/70 hover:text-white transition-colors"
+            title="Previous track"
+          >
+            <SkipBack className="w-5 h-5" />
+          </button>
 
-          <div className="flex items-center space-x-4 text-sm text-white/60">
-            <span>👍 {track.likes?.toLocaleString() || '0'}</span>
-            <span>{track.duration}</span>
-          </div>
+          {/* Play/Pause Button */}
+          <button
+            onClick={handlePlayPause}
+            disabled={isLoading}
+            className="p-3 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 text-white rounded-full transition-colors"
+            title={isLoading ? 'Loading...' : (isPlaying ? 'Pause' : 'Play')}
+          >
+            {isLoading ? (
+              <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="w-6 h-6" />
+            ) : (
+              <Play className="w-6 h-6" />
+            )}
+          </button>
+
+          {/* Next Button */}
+          <button
+            onClick={onNext}
+            className="p-2 text-white/70 hover:text-white transition-colors"
+            title="Next track"
+          >
+            <SkipForward className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Volume Control */}
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={handleMuteToggle}
+            className="p-1 text-white/70 hover:text-white transition-colors"
+            title={isMuted ? 'Unmute' : 'Mute'}
+          >
+            {isMuted ? (
+              <VolumeX className="w-4 h-4" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={isMuted ? 0 : volume}
+            onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+            className="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+          />
         </div>
       </div>
 
-      {/* Hidden Audio Element */}
-      <audio
-        ref={audioRef}
-        src={track.audioUrl}
-        preload="metadata"
-      />
+      {/* Progress Bar */}
+      <div className="mt-4">
+        {currentTrack.isUploadedAudio ? (
+          <div className="flex items-center space-x-2 text-xs text-white/60">
+            <span>{formatTime(currentTime)}</span>
+            <div
+              ref={progressRef}
+              className="flex-1 h-2 bg-white/20 rounded-full cursor-pointer relative"
+              onClick={handleProgressClick}
+            >
+              <div
+                className="h-full bg-primary-500 rounded-full transition-all duration-200"
+                style={{
+                  width: duration > 0 ? `${(currentTime / duration) * 100}%` : '0%'
+                }}
+              />
+            </div>
+            <span>{formatTime(duration)}</span>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center text-xs text-white/60 py-2">
+            <span>📺 YouTube Track - Use play button to show YouTube player</span>
+          </div>
+        )}
+      </div>
+
+      {/* Cache Progress Bar */}
+      {isCaching && (
+        <div className="mt-2">
+          <div className="flex items-center justify-between text-xs text-white/60 mb-1">
+            <span>Caching audio file...</span>
+            <span>{cacheProgress.toFixed(1)}%</span>
+          </div>
+          <div className="w-full h-1 bg-white/10 rounded-full">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all duration-300"
+              style={{ width: `${cacheProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Status Info */}
+      <div className="mt-2 flex items-center justify-between text-xs">
+        {currentTrack.isUploadedAudio && (
+          <div className="text-green-400">
+            🎵 High Quality Uploaded Audio
+          </div>
+        )}
+        {!currentTrack.isUploadedAudio && (
+          <div className="text-yellow-400">
+            📺 YouTube Track - Click play to show YouTube player
+          </div>
+        )}
+        {isCaching && (
+          <div className="text-blue-400">
+            ⚡ Caching for seamless playback...
+          </div>
+        )}
+        {!isCaching && !isLoading && !isPlaying && currentTrack.isUploadedAudio && (
+          <div className="text-green-400">
+            ✅ Ready to play
+          </div>
+        )}
+        {!isCaching && !isLoading && !isPlaying && !currentTrack.isUploadedAudio && (
+          <div className="text-yellow-400">
+            🎬 Click play to show YouTube player
+          </div>
+        )}
+      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -115,7 +115,7 @@ const TrackList: React.FC<TrackListProps> = ({ tracks, onTrackSelect, selectedAr
               
               <div className="flex items-center space-x-1 text-xs text-white/60">
                 <ThumbsUp className="w-3 h-3" />
-                <span>{track.likes.toLocaleString()}</span>
+                <span>{(track.likes || 0).toLocaleString()}</span>
               </div>
               
               {track.isCurated && (

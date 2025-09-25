@@ -64,6 +64,10 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
   };
 
   const handleSurpriseMe = async () => {
+    console.log('SurpriseMe button clicked');
+    console.log('User:', user);
+    console.log('User credits:', user?.credits);
+    
     if (!user) {
       setError('Please login to use this feature');
       return;
@@ -126,11 +130,17 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
   // Real YouTube search function using the API
   const searchYouTubeMusic = async (raga: any, artist: any) => {
     try {
+      const token = localStorage.getItem('token');
+      console.log('Searching YouTube with token:', token ? 'Present' : 'Missing');
+      console.log('Raga:', raga?.name, 'Artist:', artist?.name);
+      
       const response = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
+      
+      console.log('API response status:', response.status);
 
       if (!response.ok) {
         if (response.status === 429) {
@@ -145,6 +155,9 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
       }
 
       const data = await response.json();
+      console.log('API response data:', data);
+      console.log('Tracks found:', data.tracks?.length || 0);
+      
       return {
         tracks: data.tracks || [],
         credits: data.credits,
@@ -160,6 +173,8 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
     }
   };
 
+  console.log('SurpriseMeButton render - loading:', loading, 'user:', user, 'error:', error);
+  
   return (
     <div className="space-y-4">
       <div className="text-center">

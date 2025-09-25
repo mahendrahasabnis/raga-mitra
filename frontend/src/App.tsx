@@ -47,6 +47,7 @@ function AppContent() {
   const [ragas, setRagas] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   
   console.log('App render:', { 
     showCreditModal, 
@@ -55,6 +56,38 @@ function AppContent() {
     artistsCount: artists.length,
     isAuthenticated 
   });
+
+  // Player control functions
+
+  const handlePrevious = () => {
+    if (tracks.length > 0) {
+      const prevIndex = currentTrackIndex > 0 ? currentTrackIndex - 1 : tracks.length - 1;
+      setCurrentTrackIndex(prevIndex);
+      setCurrentTrack(tracks[prevIndex]);
+      setIsPlaying(false);
+    }
+  };
+
+  const handleNext = () => {
+    if (tracks.length > 0) {
+      const nextIndex = currentTrackIndex < tracks.length - 1 ? currentTrackIndex + 1 : 0;
+      setCurrentTrackIndex(nextIndex);
+      setCurrentTrack(tracks[nextIndex]);
+      setIsPlaying(false);
+    }
+  };
+
+  // Track selection handler that also updates the index
+  const handleTrackSelect = (track: any) => {
+    // Handle both _id (uploaded tracks) and id (YouTube tracks)
+    const trackId = track._id || track.id;
+    const trackIndex = tracks.findIndex(t => (t._id || t.id) === trackId);
+    if (trackIndex !== -1) {
+      setCurrentTrackIndex(trackIndex);
+    }
+    setCurrentTrack(track);
+    setIsPlaying(false);
+  };
 
   // Update time every minute
   useEffect(() => {
@@ -252,27 +285,31 @@ function AppContent() {
               onArtistSelect={setSelectedArtist}
               onTracksFound={(tracks, quotaInfo) => {
                 setTracks(tracks);
+                setCurrentTrackIndex(0);
                 setIsAudioMode(false);
                 setQuotaInfo(quotaInfo);
               }}
-              onTrackSelect={setCurrentTrack}
+              onTrackSelect={handleTrackSelect}
             />
             <FetchTracksButton
               selectedRaga={selectedRaga}
               selectedArtist={selectedArtist}
               onTracksFound={(tracks, quotaInfo) => {
                 setTracks(tracks);
+                setCurrentTrackIndex(0);
                 setIsAudioMode(false);
                 setQuotaInfo(quotaInfo);
               }}
-              onTrackSelect={setCurrentTrack}
+              onTrackSelect={handleTrackSelect}
             />
             <NeoPlayMode
+              selectedRaga={selectedRaga}
               onTracksFound={(tracks) => {
                 setTracks(tracks);
+                setCurrentTrackIndex(0);
                 setIsAudioMode(true);
               }}
-              onTrackSelect={setCurrentTrack}
+              onTrackSelect={handleTrackSelect}
               onPlayingChange={setIsPlaying}
             />
           </div>
@@ -293,41 +330,41 @@ function AppContent() {
           )}
         </div>
 
-        {/* Player */}
+
+        {/* Audio Player */}
         {currentTrack && (
-          <>
-            {isAudioMode ? (
-              <AudioPlayer
-                track={currentTrack}
-                onClose={() => setCurrentTrack(null)}
-              />
-            ) : (
-              <YouTubePlayer
-                track={currentTrack}
-                onClose={() => setCurrentTrack(null)}
-              />
-            )}
-          </>
+          <AudioPlayer
+            currentTrack={currentTrack}
+            onPrevious={handlePrevious}
+            onNext={handleNext}
+            onTrackSelect={handleTrackSelect}
+          />
         )}
 
         {/* Track List */}
+        {console.log('Rendering track list. Tracks length:', tracks.length, 'isAudioMode:', isAudioMode)}
         {tracks.length > 0 && (
           <>
             {isAudioMode ? (
               <AudioTrackList
                 tracks={tracks}
-                onTrackSelect={setCurrentTrack}
+                onTrackSelect={handleTrackSelect}
               />
             ) : (
               <TrackList
                 tracks={tracks}
-                onTrackSelect={setCurrentTrack}
+                onTrackSelect={handleTrackSelect}
                 selectedArtist={selectedArtist}
                 currentTrack={currentTrack}
                 isPlaying={isPlaying}
               />
             )}
           </>
+        )}
+        {tracks.length === 0 && (
+          <div className="text-center text-white/60 py-8">
+            <p>No tracks loaded. Try using Surprise Me, Fetch Tracks, or NeoPlay buttons.</p>
+          </div>
         )}
       </main>
 

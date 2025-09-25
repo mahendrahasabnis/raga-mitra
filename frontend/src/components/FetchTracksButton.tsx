@@ -22,6 +22,11 @@ const FetchTracksButton: React.FC<FetchTracksButtonProps> = ({
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
 
   const handleFetchTracks = async () => {
+    console.log('FetchTracks button clicked');
+    console.log('User:', user);
+    console.log('Selected raga:', selectedRaga);
+    console.log('Selected artist:', selectedArtist);
+    
     if (!user) {
       setError('Please login to use this feature');
       return;
@@ -79,11 +84,17 @@ const FetchTracksButton: React.FC<FetchTracksButtonProps> = ({
   // Real YouTube search function using the API
   const searchYouTubeMusic = async (raga: any, artist: any) => {
     try {
+      const token = localStorage.getItem('token');
+      console.log('FetchTracks searching YouTube with token:', token ? 'Present' : 'Missing');
+      console.log('FetchTracks Raga:', raga?.name, 'Artist:', artist?.name);
+      
       const response = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       });
+      
+      console.log('FetchTracks API response status:', response.status);
 
       if (!response.ok) {
         if (response.status === 429) {
@@ -113,6 +124,8 @@ const FetchTracksButton: React.FC<FetchTracksButtonProps> = ({
     }
   };
 
+  console.log('FetchTracksButton render - loading:', loading, 'user:', user, 'selectedRaga:', selectedRaga, 'selectedArtist:', selectedArtist, 'error:', error);
+  
   return (
     <div className="space-y-4">
       <div className="text-center">
