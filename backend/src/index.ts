@@ -20,14 +20,19 @@ import { initGridFS } from './services/gridfsService';
 dotenv.config({ path: '../.env' });
 
 const app = express();
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 8080;
 
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-frontend-domain.azurestaticapps.net']
-    : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176'],
+  origin: [
+    'https://ragamitra-frontend-dev-873534819669.asia-south1.run.app',
+    'http://localhost:3000', 
+    'http://localhost:5173', 
+    'http://localhost:5174', 
+    'http://localhost:5175', 
+    'http://localhost:5176'
+  ],
   credentials: true
 }));
 

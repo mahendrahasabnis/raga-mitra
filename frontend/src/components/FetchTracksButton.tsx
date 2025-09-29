@@ -88,7 +88,7 @@ const FetchTracksButton: React.FC<FetchTracksButtonProps> = ({
       console.log('FetchTracks searching YouTube with token:', token ? 'Present' : 'Missing');
       console.log('FetchTracks Raga:', raga?.name, 'Artist:', artist?.name);
       
-      const response = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

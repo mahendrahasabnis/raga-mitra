@@ -25,6 +25,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [cacheProgress, setCacheProgress] = useState(0);
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null);
   const [youtubePlayerVisible, setYoutubePlayerVisible] = useState(false);
+  const [youtubeError, setYoutubeError] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
 
   // Create and manage audio element with immediate caching
@@ -41,6 +42,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
         setCacheProgress(0);
         setAudioElement(null);
         setYoutubePlayerVisible(true);
+        setYoutubeError(false);
         return;
       }
 
@@ -323,19 +325,64 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({
             </div>
           </div>
           <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
-            <iframe
-              className="absolute top-0 left-0 w-full h-full rounded-lg"
-              src={`https://www.youtube.com/embed/${getYouTubeVideoId(currentTrack.audioUrl)}?autoplay=1&rel=0&modestbranding=1`}
-              title={currentTrack.title}
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+            {youtubeError ? (
+              <div className="absolute top-0 left-0 w-full h-full rounded-lg bg-gray-800 flex flex-col items-center justify-center text-white">
+                <div className="text-center p-4">
+                  <p className="text-lg mb-2">⚠️ Video cannot be embedded</p>
+                  <p className="text-sm text-gray-400 mb-4">
+                    This video may have embedding restrictions or is unavailable.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setYoutubeError(false)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+                    >
+                      🔄 Retry
+                    </button>
+                    <a
+                      href={currentTrack.url || currentTrack.audioUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                    >
+                      📺 Watch on YouTube
+                    </a>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <iframe
+                className="absolute top-0 left-0 w-full h-full rounded-lg"
+                src={`https://www.youtube.com/embed/${getYouTubeVideoId(currentTrack.url || currentTrack.audioUrl)}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1&origin=${window.location.origin}`}
+                title={currentTrack.title}
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                onError={() => setYoutubeError(true)}
+                onLoad={(e) => {
+                  // Check if iframe loaded successfully
+                  const iframe = e.target as HTMLIFrameElement;
+                  if (iframe.contentWindow) {
+                    setYoutubeError(false);
+                  }
+                }}
+              />
+            )}
           </div>
           <div className="mt-3 text-sm text-white/70">
             <p className="font-medium">{currentTrack.title}</p>
             <p className="text-xs">{currentTrack.artist} • {currentTrack.raga}</p>
-            <p className="text-xs text-yellow-400 mt-1">🎵 Audio player hidden while video is playing</p>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-xs text-yellow-400">🎵 Audio player hidden while video is playing</p>
+              <a
+                href={currentTrack.url || currentTrack.audioUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-400 hover:text-blue-300 underline"
+              >
+                📺 Watch on YouTube
+              </a>
+            </div>
           </div>
         </div>
       )}

@@ -33,7 +33,7 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
     
     setLoadingFiles(true);
     try {
-      const response = await fetch('http://localhost:3006/api/audio/files', {
+      const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/audio/files', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -74,7 +74,7 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
     setDeletingFiles(prev => new Set(prev).add(fileId));
 
     try {
-      const response = await fetch(`http://localhost:3006/api/audio/${fileId}`, {
+      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/audio/${fileId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -140,7 +140,7 @@ const AudioFileUpload: React.FC<AudioFileUploadProps> = ({
     const formData = new FormData();
     formData.append('audio', file);
 
-    const response = await fetch('http://localhost:3006/api/audio/upload', {
+    const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/audio/upload', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`

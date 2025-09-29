@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Grid from 'gridfs-stream';
 import { GridFSBucket } from 'mongodb';
+import { Db } from 'mongodb';
 
 let gfs: Grid.Grid;
 let gridFSBucket: GridFSBucket;
@@ -8,11 +9,11 @@ let gridFSBucket: GridFSBucket;
 export const initGridFS = () => {
   const conn = mongoose.connection;
   if (conn.db) {
-    gfs = Grid(conn.db, mongoose.mongo);
+    gfs = Grid(conn.db as any, mongoose.mongo);
     gfs.collection('audiofiles');
     
     // Create GridFS bucket
-    gridFSBucket = new GridFSBucket(conn.db, {
+    gridFSBucket = new GridFSBucket(conn.db as unknown as Db, {
       bucketName: 'audiofiles'
     });
   }
@@ -84,7 +85,7 @@ export const getAudioFile = async (fileId: string): Promise<{ stream: NodeJS.Rea
     if (files.length === 0) {
       try {
         const objectId = new mongoose.Types.ObjectId(fileId);
-        files = await gridFSBucket.find({ _id: objectId }).toArray();
+        files = await gridFSBucket.find({ _id: objectId as any }).toArray();
       } catch (objectIdError) {
         // If it's not a valid ObjectId, continue with empty array
         files = [];
@@ -121,7 +122,7 @@ export const deleteAudioFile = async (fileId: string): Promise<void> => {
     if (files.length === 0) {
       try {
         const objectId = new mongoose.Types.ObjectId(fileId);
-        files = await gridFSBucket.find({ _id: objectId }).toArray();
+        files = await gridFSBucket.find({ _id: objectId as any }).toArray();
       } catch (objectIdError) {
         // If it's not a valid ObjectId, continue with empty array
         files = [];

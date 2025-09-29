@@ -1,0 +1,47 @@
+steps:
+  # Build the backend Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:$BUILD_ID'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:latest'
+      - '.'
+
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:$BUILD_ID'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:latest'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ragamitra-backend'
+      - '--image=asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:$BUILD_ID'
+      - '--region=asia-south1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--service-account=ragamitra-run-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=NODE_ENV=production'
+      - '--vpc-connector=atlas-connector'
+      - '--vpc-egress=all-traffic'
+      - '--set-secrets=MONGODB_URI=MONGODB_URI:latest'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=10'
+      - '--port=8080'
+
+images:
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:$BUILD_ID'
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-repo/backend:latest'

@@ -1,0 +1,44 @@
+steps:
+  # Build the frontend Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:$BUILD_ID'
+      - '-t'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:latest'
+      - '.'
+
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:$BUILD_ID'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:latest'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ragamitra-frontend-dev'
+      - '--image=asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:$BUILD_ID'
+      - '--region=asia-south1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--service-account=ragamitra-dev-sa@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=NODE_ENV=development'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--min-instances=0'
+      - '--max-instances=5'
+      - '--port=80'
+
+images:
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:$BUILD_ID'
+  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/ragamitra-dev-repo/frontend:latest'

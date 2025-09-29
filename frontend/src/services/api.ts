@@ -1,7 +1,7 @@
 import axios from 'axios';
 // import type { AuthResponse, Raga, Artist, Track, ApiResponse } from '../types/index.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3006/api';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

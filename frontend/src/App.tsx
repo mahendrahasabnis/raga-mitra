@@ -24,12 +24,7 @@ function AppContent() {
   const { user, isAuthenticated, updateCredits } = useAuth();
   const [showLogin, setShowLogin] = useState(!isAuthenticated);
   
-  // Reset auto-selection when user logs in/out
-  useEffect(() => {
-    if (isAuthenticated) {
-      setHasAutoSelected(false);
-    }
-  }, [isAuthenticated]);
+  // Removed auto-selection reset logic
   const [selectedRaga, setSelectedRaga] = useState<any | null>(null);
   const [selectedArtist, setSelectedArtist] = useState<any | null>(null);
   const [currentTrack, setCurrentTrack] = useState<any | null>(null);
@@ -46,7 +41,7 @@ function AppContent() {
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
   const [ragas, setRagas] = useState<any[]>([]);
   const [artists, setArtists] = useState<any[]>([]);
-  const [hasAutoSelected, setHasAutoSelected] = useState(false);
+  // Removed hasAutoSelected state - no longer needed
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   
   console.log('App render:', { 
@@ -127,59 +122,8 @@ function AppContent() {
     fetchArtists();
   }, [isAuthenticated]);
 
-  // Auto-select random starred raga and artist when data is loaded
-  useEffect(() => {
-    if (ragas.length > 0 && artists.length > 0 && !hasAutoSelected) {
-      const selectRandomStarredRaga = () => {
-        const currentSeason = getCurrentSeason();
-        const currentHour = new Date().getHours();
-        
-        console.log('Auto-selection debug:', {
-          currentSeason: currentSeason.english,
-          currentHour,
-          totalRagas: ragas.length
-        });
-        
-        // Get all starred ragas (current hour + current season)
-        const starredRagas = ragas.filter(raga => 
-          raga.idealHours && raga.idealHours.includes(currentHour) && 
-          raga.seasons && raga.seasons.includes(currentSeason.english)
-        );
-        
-        console.log('Starred ragas found:', starredRagas.map(r => ({ name: r.name, idealHours: r.idealHours, seasons: r.seasons })));
-        
-        if (starredRagas.length > 0) {
-          const randomIndex = Math.floor(Math.random() * starredRagas.length);
-          const selectedRaga = starredRagas[randomIndex];
-          console.log('Selected starred raga:', selectedRaga.name);
-          return selectedRaga;
-        }
-        
-        console.log('No starred ragas found - not selecting any raga');
-        // No fallback - only select from starred ragas
-        return null;
-      };
-
-      const selectRandomArtist = () => {
-        if (artists.length > 0) {
-          const randomIndex = Math.floor(Math.random() * artists.length);
-          return artists[randomIndex];
-        }
-        return null;
-      };
-
-      const randomRaga = selectRandomStarredRaga();
-      const randomArtist = selectRandomArtist();
-      
-      if (randomRaga) {
-        setSelectedRaga(randomRaga);
-      }
-      if (randomArtist) {
-        setSelectedArtist(randomArtist);
-      }
-      setHasAutoSelected(true);
-    }
-  }, [ragas, artists, hasAutoSelected]);
+  // AUTO-SELECTION DISABLED: User must manually select ragas and artists
+  // Removed auto-selection logic completely
 
   const getSeasonName = (date: Date): string => {
     const currentSeason = getCurrentSeason(date);

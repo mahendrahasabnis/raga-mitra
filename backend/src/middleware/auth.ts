@@ -19,7 +19,7 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    const decoded = jwt.verify(token, process.env.JWT_PRIVATE_KEY!) as any;
     const user = await User.findById(decoded.userId).select('-pinHash');
     
     if (!user) {

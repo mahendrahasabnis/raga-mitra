@@ -75,7 +75,7 @@ const CreditConfig: React.FC<CreditConfigProps> = ({ onBack }) => {
   const loadPackages = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3006/api/credit-packages', {
+      const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/credit-packages', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -95,8 +95,8 @@ const CreditConfig: React.FC<CreditConfigProps> = ({ onBack }) => {
   const handleSave = async () => {
     try {
       const url = editingPackage 
-        ? `http://localhost:3006/api/credit-packages/${editingPackage._id}`
-        : 'http://localhost:3006/api/credit-packages';
+        ? `https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/credit-packages/${editingPackage._id}`
+        : 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/credit-packages';
       
       const method = editingPackage ? 'PUT' : 'POST';
       
@@ -137,7 +137,7 @@ const CreditConfig: React.FC<CreditConfigProps> = ({ onBack }) => {
     if (!confirm('Are you sure you want to delete this credit package?')) return;
     
     try {
-      const response = await fetch(`http://localhost:3006/api/credit-packages/${packageId}`, {
+      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/credit-packages/${packageId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -244,7 +244,7 @@ const CreditConfig: React.FC<CreditConfigProps> = ({ onBack }) => {
         }
         
         if (Array.isArray(importedPackages)) {
-          const response = await fetch('http://localhost:3006/api/credit-packages/import', {
+          const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/credit-packages/import', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

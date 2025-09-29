@@ -32,21 +32,21 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
   const [quotaInfo, setQuotaInfo] = useState<any>(null);
 
   const selectRandomStarredRaga = () => {
-    const currentSeason = getCurrentSeason();
     const currentHour = new Date().getHours();
     
-    // Get all starred ragas (current hour + current season)
-    const starredRagas = ragas.filter(raga => 
-      raga.idealHours && raga.idealHours.includes(currentHour) && 
-      raga.seasons && raga.seasons.includes(currentSeason.english)
-    );
+    // Get all ragas that match current hour (ideal hour matched ragas only)
+    const currentHourRagas = ragas.filter(raga => {
+      if (!raga.idealHours || raga.idealHours.length === 0) return false;
+      // Only select from ragas that contain current hour AND are not "any time" ragas
+      return raga.idealHours.includes(currentHour) && !(raga.idealHours.length === 1 && raga.idealHours.includes(0));
+    });
     
-    if (starredRagas.length > 0) {
-      const randomIndex = Math.floor(Math.random() * starredRagas.length);
-      return starredRagas[randomIndex];
+    if (currentHourRagas.length > 0) {
+      const randomIndex = Math.floor(Math.random() * currentHourRagas.length);
+      return currentHourRagas[randomIndex];
     }
     
-    // Fallback to any raga if no starred ragas
+    // Fallback to any raga if no current hour ragas found
     if (ragas.length > 0) {
       const randomIndex = Math.floor(Math.random() * ragas.length);
       return ragas[randomIndex];
@@ -64,10 +64,6 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
   };
 
   const handleSurpriseMe = async () => {
-    console.log('SurpriseMe button clicked');
-    console.log('User:', user);
-    console.log('User credits:', user?.credits);
-    
     if (!user) {
       setError('Please login to use this feature');
       return;
@@ -97,7 +93,6 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
       onArtistSelect(randomArtist);
 
       // Search YouTube for raga-based classical music
-      const searchQuery = `${randomRaga.name} classical music ${randomArtist?.name || ''}`.trim();
       const result = await searchYouTubeMusic(randomRaga, randomArtist);
       
       if (result.tracks && result.tracks.length > 0) {
@@ -120,7 +115,7 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
       if (err.message?.includes('credits')) {
         setError('Insufficient credits. Please buy more credits.');
       } else {
-        setError('Failed to find tracks. Please try again.');
+        setError(`Failed to find tracks: ${err.message}`);
       }
     } finally {
       setLoading(false);
@@ -131,16 +126,12 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
   const searchYouTubeMusic = async (raga: any, artist: any) => {
     try {
       const token = localStorage.getItem('token');
-      console.log('Searching YouTube with token:', token ? 'Present' : 'Missing');
-      console.log('Raga:', raga?.name, 'Artist:', artist?.name);
       
-      const response = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
       });
-      
-      console.log('API response status:', response.status);
 
       if (!response.ok) {
         if (response.status === 429) {
@@ -151,12 +142,15 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
           const errorData = await response.json();
           throw new Error(errorData.message || 'Insufficient credits');
         }
-        throw new Error('Failed to search YouTube');
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please login again.');
+        }
+        
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('API response data:', data);
-      console.log('Tracks found:', data.tracks?.length || 0);
       
       return {
         tracks: data.tracks || [],

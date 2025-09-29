@@ -25,71 +25,111 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
     }
   }, [ragas]);
 
-  // Sort and filter ragas based on current season, hour, and popularity
+  const formatTimeRange = (idealHours: number[]) => {
+    if (!idealHours || idealHours.length === 0) return 'Any time';
+    
+    const formatHour = (hour: number) => {
+      if (hour === 0) return '12 AM';
+      if (hour < 12) return `${hour} AM`;
+      if (hour === 12) return '12 PM';
+      return `${hour - 12} PM`;
+    };
+    
+    // If only one element and it's 0, show "Any Time"
+    if (idealHours.length === 1 && idealHours[0] === 0) {
+      return 'Any Time';
+    }
+    
+    // If only one element, show just that element
+    if (idealHours.length === 1) {
+      return formatHour(idealHours[0]);
+    }
+    
+    // Show first element - last element
+    const firstHour = idealHours[0];
+    const lastHour = idealHours[idealHours.length - 1];
+    
+    return `${formatHour(firstHour)} - ${formatHour(lastHour)}`;
+  };
+
+  // Smart sorting: ragas with current+next hour, sorted by first hour
   useEffect(() => {
     if (ragas.length === 0) return;
 
-    const currentSeason = getCurrentSeason();
     const currentHour = new Date().getHours();
     
-    // Filter ragas by current season
-    const seasonFilteredRagas = ragas.filter(raga => 
-      raga.seasons && raga.seasons.includes(currentSeason.english)
-    );
+    console.log('🕐 Current hour:', currentHour);
     
-    // If no ragas for current season, use all ragas
-    const ragasToSort = seasonFilteredRagas.length > 0 ? seasonFilteredRagas : ragas;
-    
-    // Separate ragas into categories
-    const starredRagas = ragasToSort.filter(raga => 
-      raga.idealHours && raga.idealHours.includes(currentHour) && 
-      raga.seasons && raga.seasons.includes(currentSeason.english)
-    );
-    
-    const anyTimeRagas = ragasToSort.filter(raga => 
-      raga.idealHours && raga.idealHours.includes(0)
-    );
-    
-    const timeSpecificRagas = ragasToSort.filter(raga => 
-      raga.idealHours && !raga.idealHours.includes(0) && 
-      !(raga.idealHours.includes(currentHour) && raga.seasons && raga.seasons.includes(currentSeason.english))
-    );
-    
-    // Sort starred ragas by popularity
-    starredRagas.sort((a, b) => {
-      const popularityOrder = {
-        'highly listened': 1,
-        'moderately listened': 2,
-        'sparingly listened': 3,
-        'rarely listened': 4
-      };
-      const aOrder = popularityOrder[a.popularity as keyof typeof popularityOrder] || 5;
-      const bOrder = popularityOrder[b.popularity as keyof typeof popularityOrder] || 5;
-      return aOrder - bOrder;
+    // Find ragas whose idealHours array contains current hour AND are NOT "any time" ragas
+    const currentHourRagas = ragas.filter(raga => {
+      if (!raga.idealHours || raga.idealHours.length === 0) return false;
+      // Must contain current hour AND must not be "any time" raga
+      const hasCurrentHour = raga.idealHours.includes(currentHour);
+      const isAnyTime = raga.idealHours.length === 1 && raga.idealHours.includes(0);
+      const hasOnlyZero = raga.idealHours.every(hour => hour === 0);
+      const hasValidHours = raga.idealHours.some(hour => hour > 0);
+      
+      // STRICT FILTERING: Must have current hour, not be any-time, not have only zeros, and have valid hours
+      return hasCurrentHour && !isAnyTime && !hasOnlyZero && hasValidHours;
     });
     
-    // Sort time-specific ragas by ascending time of day
-    timeSpecificRagas.sort((a, b) => {
-      const aMinHour = Math.min(...a.idealHours);
-      const bMinHour = Math.min(...b.idealHours);
-      return aMinHour - bMinHour;
+    const anyTimeRagas = ragas.filter(raga => {
+      if (!raga.idealHours || raga.idealHours.length === 0) return false;
+      return raga.idealHours.length === 1 && raga.idealHours.includes(0);
     });
     
-    // Sort any-time ragas by popularity
-    anyTimeRagas.sort((a, b) => {
-      const popularityOrder = {
-        'highly listened': 1,
-        'moderately listened': 2,
-        'sparingly listened': 3,
-        'rarely listened': 4
-      };
-      const aOrder = popularityOrder[a.popularity as keyof typeof popularityOrder] || 5;
-      const bOrder = popularityOrder[b.popularity as keyof typeof popularityOrder] || 5;
-      return aOrder - bOrder;
+    // Get all remaining ragas (not current hour and not any-time)
+    const currentHourIds = new Set(currentHourRagas.map(r => r._id));
+    const anyTimeIds = new Set(anyTimeRagas.map(r => r._id));
+    
+    const remainingRagas = ragas.filter(raga => {
+      return !currentHourIds.has(raga._id) && !anyTimeIds.has(raga._id);
     });
     
-    // Combine all ragas in order
-    const sortedRagas = [...starredRagas, ...timeSpecificRagas, ...anyTimeRagas];
+    // Sort current hour ragas by the first value in their idealHours array
+    const sortedCurrentHourRagas = currentHourRagas.sort((a, b) => {
+      const aFirstHour = a.idealHours && a.idealHours.length > 0 ? a.idealHours[0] : 24;
+      const bFirstHour = b.idealHours && b.idealHours.length > 0 ? b.idealHours[0] : 24;
+      return aFirstHour - bFirstHour;
+    });
+    
+    // Sort remaining ragas by name for consistency
+    const sortedRemainingRagas = remainingRagas.sort((a, b) => {
+      return a.name.localeCompare(b.name);
+    });
+    
+    // Combine: current hour ragas first, then any time ragas, then all remaining ragas
+    const sortedRagas = [...sortedCurrentHourRagas, ...anyTimeRagas, ...sortedRemainingRagas];
+    
+    console.log('🎯 Current hour ragas (before sorting):', currentHourRagas.map(r => ({
+      name: r.name,
+      hours: r.idealHours,
+      timeRange: formatTimeRange(r.idealHours)
+    })));
+    
+    console.log('🎯 Current hour ragas (after sorting):', sortedCurrentHourRagas.map(r => ({
+      name: r.name,
+      firstHour: r.idealHours?.[0] || 'none',
+      hours: r.idealHours,
+      timeRange: formatTimeRange(r.idealHours)
+    })));
+    
+    console.log('🕐 Any time ragas:', anyTimeRagas.map(r => ({
+      name: r.name,
+      hours: r.idealHours,
+      timeRange: formatTimeRange(r.idealHours)
+    })));
+    
+    console.log('🎵 Remaining ragas:', sortedRemainingRagas.length, 'ragas');
+    
+    // AUTO-SELECTION DISABLED: User will manually select ragas
+    console.log('🔍 Auto-selection disabled - user must manually select ragas');
+    console.log('🔍 Current hour:', currentHour);
+    console.log('🔍 Total ragas:', ragas.length);
+    console.log('🔍 Current hour ragas available:', sortedCurrentHourRagas.length);
+    console.log('🔍 Any time ragas available:', anyTimeRagas.length);
+    console.log('🔍 Remaining ragas available:', sortedRemainingRagas.length);
+    console.log('🔍 Total in carousel:', sortedRagas.length);
     
     // Apply search filter
     let filteredRagas = sortedRagas;
@@ -97,33 +137,9 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
       filteredRagas = sortedRagas.filter(raga => {
         const searchLower = searchTerm.toLowerCase();
         const ragaName = raga.name.toLowerCase();
-        const popularity = raga.popularity ? raga.popularity.toLowerCase() : '';
-        const timeRange = formatTimeRange(raga.idealHours).toLowerCase();
         
-        // Search by raga name
-        if (ragaName.includes(searchLower)) return true;
-        
-        // Search by popularity
-        if (popularity.includes(searchLower)) return true;
-        
-        // Search by time-related terms
-        if (searchLower.includes('any time') || searchLower.includes('all day')) {
-          return raga.idealHours && raga.idealHours.includes(0);
-        }
-        
-        // Search by specific time
-        if (searchLower.includes('am') || searchLower.includes('pm') || searchLower.includes('time')) {
-          return timeRange.includes(searchLower);
-        }
-        
-        // Search by hour number
-        const hourMatch = searchLower.match(/\d+/);
-        if (hourMatch) {
-          const hour = parseInt(hourMatch[0]);
-          return raga.idealHours && raga.idealHours.includes(hour);
-        }
-        
-        return false;
+        // Simple search by raga name only
+        return ragaName.includes(searchLower);
       });
     }
 
@@ -172,30 +188,6 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
       </div>
     );
   }
-
-  const formatTimeRange = (idealHours: number[]) => {
-    if (!idealHours || idealHours.length === 0) return 'Any time';
-    
-    // If 0 is in the array, it means "any time of day"
-    if (idealHours.includes(0)) return 'Any time of day';
-    
-    const sortedHours = [...idealHours].sort((a, b) => a - b);
-    const startHour = sortedHours[0];
-    const endHour = sortedHours[sortedHours.length - 1];
-    
-    const formatHour = (hour: number) => {
-      if (hour === 0) return '12 AM';
-      if (hour < 12) return `${hour} AM`;
-      if (hour === 12) return '12 PM';
-      return `${hour - 12} PM`;
-    };
-    
-    if (startHour === endHour) {
-      return formatHour(startHour);
-    }
-    
-    return `${formatHour(startHour)} - ${formatHour(endHour)}`;
-  };
 
   const isRecommendedForCurrentHour = (raga: any) => {
     const currentHour = new Date().getHours();
@@ -254,8 +246,19 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
                 placeholder="Search by name, time, popularity..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-56 pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-56 pl-10 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-sm text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-white/60 hover:text-white/90 transition-colors"
+                  title="Clear search"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
           
@@ -285,10 +288,13 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
               <div
                 key={raga._id}
                 data-raga-id={raga._id}
-                onClick={() => onRagaSelect(raga)}
+                onClick={() => {
+                  console.log('🎯 Raga clicked:', raga.name, 'ID:', raga._id);
+                  onRagaSelect(raga);
+                }}
                 className={`flex-shrink-0 w-40 h-24 rounded-xl p-3 cursor-pointer transition-all duration-200 flex flex-col items-center justify-center min-h-[6rem] ${
                   selectedRaga?._id === raga._id
-                    ? 'bg-primary-600/30 border-2 border-primary-500'
+                    ? 'bg-blue-600 border-4 border-blue-300 shadow-lg shadow-blue-500/50'
                     : 'bg-white/10 border border-white/20 hover:bg-white/20'
                 }`}
               >

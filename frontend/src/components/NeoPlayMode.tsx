@@ -104,7 +104,7 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
           .map((file: any) => ({
             _id: file._id,
             title: file.title || file.originalName,
-            audioUrl: `http://localhost:3006/api/audio/stream/${file._id}`,
+            audioUrl: `https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/audio/stream/${file._id}`,
             duration: file.duration || 'Unknown',
             durationSeconds: file.durationSeconds || 0,
             likes: Math.floor(Math.random() * 10000) + 1000,
@@ -140,7 +140,7 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
       if (tracks.length === 0) {
         console.log('No uploaded audio files found, searching YouTube for raga:', selectedRaga.name);
         
-        const youtubeResponse = await fetch(`http://localhost:3006/api/tracks/youtube/search?raga=${encodeURIComponent(selectedRaga.name)}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+        const youtubeResponse = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/tracks/youtube/search?raga=${encodeURIComponent(selectedRaga.name)}&minDuration=1800&maxResults=10&orderBy=relevance`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }

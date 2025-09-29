@@ -77,7 +77,7 @@ export const signup = async (req: Request, res: Response) => {
     // Generate JWT with expiration
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'fallback-secret',
+      process.env.JWT_PRIVATE_KEY || 'fallback-secret',
       { expiresIn: '7d' }
     );
 
@@ -121,7 +121,7 @@ export const login = async (req: Request, res: Response) => {
     // Generate JWT with expiration
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET || 'fallback-secret',
+      process.env.JWT_PRIVATE_KEY || 'fallback-secret',
       { expiresIn: '7d' }
     );
 
