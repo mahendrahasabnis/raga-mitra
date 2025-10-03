@@ -100,11 +100,12 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
         console.log(`Found ${filteredAudioFiles.length} audio files for raga: ${selectedRaga.name}`);
 
         // Convert filtered uploaded audio files to track format
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
         tracks = filteredAudioFiles
           .map((file: any) => ({
             _id: file._id,
             title: file.title || file.originalName,
-            audioUrl: `https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/audio/stream/${file._id}`,
+            audioUrl: `${API_BASE_URL}/audio/stream/${file._id}`,
             duration: file.duration || 'Unknown',
             durationSeconds: file.durationSeconds || 0,
             likes: Math.floor(Math.random() * 10000) + 1000,
@@ -140,7 +141,9 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
       if (tracks.length === 0) {
         console.log('No uploaded audio files found, searching YouTube for raga:', selectedRaga.name);
         
-        const youtubeResponse = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/tracks/youtube/search?raga=${encodeURIComponent(selectedRaga.name)}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+        // Use the same API base URL as other requests
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+        const youtubeResponse = await fetch(`${API_BASE_URL}/tracks/youtube/search?raga=${encodeURIComponent(selectedRaga.name)}&minDuration=1800&maxResults=10&orderBy=relevance`, {
           headers: {
             'Authorization': `Bearer ${localStorage.getItem('token')}`
           }
@@ -148,22 +151,37 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
         
         if (youtubeResponse.ok) {
           const youtubeData = await youtubeResponse.json();
+          console.log('YouTube search response:', youtubeData);
           tracks = (youtubeData.tracks || []).map((track: any) => ({
             ...track,
             isUploadedAudio: false, // Flag to identify YouTube tracks
-            audioUrl: track.url // Use YouTube URL for playback
+            audioUrl: track.url, // Use YouTube URL for playback
+            url: track.url // Ensure URL is available for YouTube player
           }));
+          console.log(`Found ${tracks.length} YouTube tracks for raga: ${selectedRaga.name}`);
+          console.log('YouTube tracks:', tracks);
+        } else {
+          console.error('YouTube search failed:', youtubeResponse.status, youtubeResponse.statusText);
+          const errorData = await youtubeResponse.json().catch(() => ({}));
+          console.error('YouTube error details:', errorData);
         }
       }
       
       if (tracks.length > 0) {
+        console.log(`NeoPlay loaded ${tracks.length} tracks for raga: ${selectedRaga.name}`);
+        console.log('First track:', tracks[0]);
+        
         setTracks(tracks);
         setCurrentTrackIndex(0);
         onTracksFound(tracks);
+        
         // Set first track as current but don't auto-play
+        console.log('Setting first track as current track');
         onTrackSelect(tracks[0]);
-        console.log(`NeoPlay loaded ${tracks.length} tracks for raga: ${selectedRaga.name}`);
+        
+        console.log('NeoPlay setup complete - tracks should be visible now');
       } else {
+        console.log('No tracks found for raga:', selectedRaga.name);
         showError(`No audio tracks found for raga: ${selectedRaga.name}. Please try a different raga or upload some audio files.`);
       }
     } catch (err) {
@@ -182,16 +200,16 @@ const NeoPlayMode: React.FC<NeoPlayModeProps> = ({
         <button
           onClick={handleNeoPlay}
           disabled={loading || !user || user.credits <= 0 || !selectedRaga}
-          className="btn-secondary text-sm px-6 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
+          className="btn-secondary text-base sm:text-sm px-6 py-4 sm:py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mx-auto w-full sm:w-auto"
         >
           {loading ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <div className="w-5 h-5 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               <span>Loading...</span>
             </>
           ) : (
             <>
-              <Star className="w-4 h-4" />
+              <Star className="w-5 h-5 sm:w-4 sm:h-4" />
               <span>NeoPlay {selectedRaga ? `(${selectedRaga.name})` : ''}</span>
             </>
           )}

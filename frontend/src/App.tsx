@@ -21,8 +21,26 @@ import { ragaApi, artistApi } from './services/api';
 // import { Raga, Artist, Track } from './types';
 
 function AppContent() {
-  const { user, isAuthenticated, updateCredits } = useAuth();
+  const { user, isAuthenticated, updateCredits, checkAuthState } = useAuth();
   const [showLogin, setShowLogin] = useState(!isAuthenticated);
+
+  // Show login screen when user logs out
+  useEffect(() => {
+    // Check if we have auth data in localStorage but context is not updated
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+    
+    if (storedToken && storedUser && !isAuthenticated) {
+      // Force update the context
+      checkAuthState();
+    }
+    
+    if (!isAuthenticated) {
+      setShowLogin(true);
+    } else {
+      setShowLogin(false);
+    }
+  }, [isAuthenticated]);
   
   // Removed auto-selection reset logic
   const [selectedRaga, setSelectedRaga] = useState<any | null>(null);
@@ -44,13 +62,6 @@ function AppContent() {
   // Removed hasAutoSelected state - no longer needed
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   
-  console.log('App render:', { 
-    showCreditModal, 
-    userCredits: user?.credits, 
-    ragasCount: ragas.length, 
-    artistsCount: artists.length,
-    isAuthenticated 
-  });
 
   // Player control functions
 
@@ -74,14 +85,18 @@ function AppContent() {
 
   // Track selection handler that also updates the index
   const handleTrackSelect = (track: any) => {
+    console.log('Track selected:', track);
+    console.log('Current tracks array:', tracks);
     // Handle both _id (uploaded tracks) and id (YouTube tracks)
     const trackId = track._id || track.id;
     const trackIndex = tracks.findIndex(t => (t._id || t.id) === trackId);
+    console.log('Track index found:', trackIndex);
     if (trackIndex !== -1) {
       setCurrentTrackIndex(trackIndex);
     }
     setCurrentTrack(track);
     setIsPlaying(false);
+    console.log('Current track set to:', track);
   };
 
   // Update time every minute
@@ -96,9 +111,7 @@ function AppContent() {
   useEffect(() => {
     const fetchRagas = async () => {
       try {
-        console.log('Fetching ragas...', { isAuthenticated, token: localStorage.getItem('token') });
         const data = await ragaApi.getRagas();
-        console.log('Ragas fetched successfully:', data.length, 'ragas');
         setRagas(data);
       } catch (error) {
         console.error('Error fetching ragas:', error);
@@ -111,9 +124,7 @@ function AppContent() {
   useEffect(() => {
     const fetchArtists = async () => {
       try {
-        console.log('Fetching artists...', { isAuthenticated, token: localStorage.getItem('token') });
         const data = await artistApi.getArtists();
-        console.log('Artists fetched successfully:', data.length, 'artists');
         setArtists(data);
       } catch (error) {
         console.error('Error fetching artists:', error);
@@ -176,13 +187,35 @@ function AppContent() {
     return `${day}-${month}-${year} (${marathiMonth.marathi})`;
   };
 
-  if (!isAuthenticated) {
+  // Check authentication state more robustly
+  const hasToken = localStorage.getItem('token');
+  const hasUser = localStorage.getItem('user');
+  const isActuallyAuthenticated = isAuthenticated || (hasToken && hasUser);
+  
+
+  if (!isActuallyAuthenticated) {
     return <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />;
   }
 
 
+
   return (
         <div className="min-h-screen flex flex-col">
+          {/* Clean header with welcome info */}
+          <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 shadow-lg">
+            <div className="flex justify-between items-center">
+              <div className="flex flex-col">
+                <h1 className="text-2xl font-bold">राग उत्सव (Celebration of Raga)</h1>
+                <p className="text-sm opacity-90">Welcome: {user?.phone}</p>
+              </div>
+              <div className="text-right">
+                <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-medium">
+                  Role: {user?.role?.toUpperCase()}
+                </span>
+              </div>
+            </div>
+          </div>
+          
           <Header 
             onBuyCredits={() => setShowCreditModal(true)} 
             onTransactionReport={() => setShowTransactionModal(true)}
@@ -190,7 +223,7 @@ function AppContent() {
             isAdmin={user?.isAdmin || false}
           />
       
-      <main className="flex-1 px-4 py-6 space-y-8 pt-32">
+      <main className="flex-1 px-3 py-4 space-y-6 sm:px-4 sm:py-6 sm:space-y-8">
         {/* Raga Selection */}
         <RagaSelector
           selectedRaga={selectedRaga}
@@ -218,8 +251,8 @@ function AppContent() {
             </div>
           )}
           
-          {/* Buttons in One Row */}
-          <div className="flex gap-3 items-center justify-center">
+          {/* Buttons - Responsive Layout */}
+          <div className="flex flex-col space-y-3 sm:flex-row sm:gap-3 sm:items-center sm:justify-center sm:space-y-0">
             <SurpriseMeButton
               selectedRaga={selectedRaga}
               selectedArtist={selectedArtist}
@@ -276,6 +309,7 @@ function AppContent() {
 
 
         {/* Audio Player */}
+        {console.log('Player visibility check - currentTrack:', currentTrack, 'tracks.length:', tracks.length)}
         {currentTrack && (
           <AudioPlayer
             currentTrack={currentTrack}
@@ -338,6 +372,7 @@ function AppContent() {
             onClose={() => setShowConfigMenu(false)}
             isAdmin={user?.isAdmin || false}
           />
+
     </div>
   );
 }

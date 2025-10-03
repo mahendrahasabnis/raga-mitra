@@ -10,6 +10,8 @@ interface AuthContextType {
   signup: (phone: string, pin: string) => Promise<boolean>;
   logout: () => void;
   updateCredits: (credits: number) => void;
+  checkAuthState: () => void;
+  setAuthData: (userData: any, token: string) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -103,6 +105,93 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const setAuthData = (userData: any, token: string) => {
+    console.log('🔄 [AUTH CONTEXT] Setting auth data directly:', { userData, token });
+    
+    // Set all state values
+    setUser(userData);
+    setToken(token);
+    setIsAuthenticated(true);
+    
+    // Store in localStorage
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+    
+    console.log('✅ [AUTH CONTEXT] Auth data set successfully');
+    console.log('✅ [AUTH CONTEXT] Current state after setAuthData:', { 
+      user: userData, 
+      token, 
+      isAuthenticated: true 
+    });
+    
+    // Force a re-render by updating state again
+    setTimeout(() => {
+      console.log('🔄 [AUTH CONTEXT] Forcing state update again');
+      setUser(userData);
+      setToken(token);
+      setIsAuthenticated(true);
+    }, 50);
+  };
+
+  const checkAuthState = () => {
+    const storedToken = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+    
+    console.log('🔍 [AUTH STATE] Checking auth state:', { 
+      hasToken: !!storedToken, 
+      hasUserData: !!userData,
+      tokenLength: storedToken?.length || 0,
+      currentAuthState: isAuthenticated,
+      currentUser: user
+    });
+    
+    if (storedToken && userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        console.log('✅ [AUTH STATE] Parsed user data:', parsedUser);
+        
+        // Force state update by setting all values
+        setUser(parsedUser);
+        setToken(storedToken);
+        setIsAuthenticated(true);
+        
+        console.log('✅ [AUTH STATE] Authentication state restored from localStorage');
+        console.log('✅ [AUTH STATE] New state:', { 
+          user: parsedUser, 
+          token: storedToken, 
+          isAuthenticated: true 
+        });
+        
+        // Force multiple re-renders to ensure state is updated
+        setTimeout(() => {
+          setUser(parsedUser);
+          setToken(storedToken);
+          setIsAuthenticated(true);
+          console.log('🔄 [AUTH STATE] State update confirmed - attempt 1');
+        }, 0);
+        
+        setTimeout(() => {
+          setUser(parsedUser);
+          setToken(storedToken);
+          setIsAuthenticated(true);
+          console.log('🔄 [AUTH STATE] State update confirmed - attempt 2');
+        }, 50);
+      } catch (error) {
+        console.error('❌ [AUTH STATE] Error parsing user data:', error);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setUser(null);
+        setToken(null);
+        setIsAuthenticated(false);
+      }
+    } else {
+      console.log('❌ [AUTH STATE] No authentication data found in localStorage');
+      setUser(null);
+      setToken(null);
+      setIsAuthenticated(false);
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isAuthenticated,
@@ -110,7 +199,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     login,
     signup,
     logout,
-    updateCredits
+    updateCredits,
+    checkAuthState,
+    setAuthData
   };
 
   return (

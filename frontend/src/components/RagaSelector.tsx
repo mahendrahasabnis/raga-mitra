@@ -177,14 +177,22 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        {/* Mobile Layout */}
+        <div className="flex flex-col space-y-3 sm:hidden">
+          <h2 className="text-lg font-semibold text-white text-center">Select a Raga ({ragas.length})</h2>
+          <div className="w-full h-12 bg-white/10 rounded-lg animate-pulse"></div>
+        </div>
+
+        {/* Desktop Layout */}
+        <div className="hidden sm:flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">Select a Raga ({ragas.length})</h2>
         </div>
-            <div className="scroll-container">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-40 h-14 bg-white/10 rounded-xl animate-pulse" />
-              ))}
-            </div>
+        
+        <div className="scroll-container">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="flex-shrink-0 w-40 h-14 bg-white/10 rounded-xl animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -235,7 +243,34 @@ const RagaSelector: React.FC<RagaSelectorProps> = ({ selectedRaga, onRagaSelect,
 
   return (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          {/* Mobile Layout */}
+          <div className="flex flex-col space-y-3 sm:hidden">
+            <h2 className="text-lg font-semibold text-white text-center">Select a Raga ({ragas.length})</h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/60" />
+              <input
+                type="text"
+                placeholder="Search ragas..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-12 pr-12 py-3 bg-white/10 border border-white/20 rounded-lg text-base text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/60 hover:text-white/90 transition-colors"
+                  title="Clear search"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop Layout */}
+          <div className="hidden sm:flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">Select a Raga ({ragas.length})</h2>
             </div>

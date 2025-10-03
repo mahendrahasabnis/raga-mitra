@@ -127,7 +127,7 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
     try {
       const token = localStorage.getItem('token');
       
-      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
+      const response = await fetch(`http://34.117.220.98/api/tracks/youtube/search?raga=${encodeURIComponent(raga?.name || '')}&artist=${encodeURIComponent(artist?.name || '')}&minDuration=1800&maxResults=10&orderBy=relevance`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -175,16 +175,16 @@ const SurpriseMeButton: React.FC<SurpriseMeButtonProps> = ({
         <button
           onClick={handleSurpriseMe}
           disabled={loading || !user || user.credits <= 0}
-          className="btn-primary text-sm px-6 py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 mx-auto"
+          className="btn-primary text-base sm:text-sm px-6 py-4 sm:py-3 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 mx-auto w-full sm:w-auto"
         >
           {loading ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <div className="w-5 h-5 sm:w-4 sm:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               <span>Searching...</span>
             </>
           ) : (
             <>
-              <Shuffle className="w-4 h-4" />
+              <Shuffle className="w-5 h-5 sm:w-4 sm:h-4" />
               <span>Surprise Me!</span>
             </>
           )}

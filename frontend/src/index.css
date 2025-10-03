@@ -37,15 +37,54 @@
     scroll-behavior: smooth;
     white-space: nowrap;
     width: 100%;
+    cursor: grab;
   }
   
-  .scroll-container::-webkit-scrollbar {
-    display: none;
+  .scroll-container:active {
+    cursor: grabbing;
   }
   
-  .scroll-container {
+  /* Show scrollbar on desktop for better UX */
+  @media (min-width: 640px) {
+    .scroll-container::-webkit-scrollbar {
+      height: 8px;
+    }
+    
+    .scroll-container::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+    
+    .scroll-container::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+    }
+    
+    .scroll-container::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+  }
+  
+  /* Hide scrollbar on mobile */
+  @media (max-width: 639px) {
+    .scroll-container::-webkit-scrollbar {
+      display: none;
+    }
+    
+    .scroll-container {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  }
+
+  /* Hide scrollbar utility class */
+  .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
 }
 

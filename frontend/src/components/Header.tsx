@@ -44,50 +44,51 @@ const Header: React.FC<HeaderProps> = ({ onBuyCredits, onTransactionReport, onCo
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 glass-effect border-b border-white/20">
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          {/* App Name */}
+    <header className="glass-effect border-b border-white/20">
+      <div className="max-w-7xl mx-auto px-3 py-3 sm:px-4 sm:py-4">
+        {/* App Name - Full Width on Mobile */}
+        <div className="flex justify-center mb-3 sm:hidden">
+          <h1 className="text-xl font-bold text-gradient">Raga-Mitra</h1>
+        </div>
+
+        {/* Desktop Layout */}
+        <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <h1 className="text-lg font-bold text-gradient">Raga-Mitra</h1>
           </div>
-
-          {/* Credits and Actions */}
           <div className="flex items-center space-x-4">
             {user && (
               <>
-                <div 
+                <button 
                   onClick={onBuyCredits}
-                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <ShoppingCart className="w-4 h-4" />
                   <span className="text-sm">Buy</span>
                   <span className="text-xs text-white/80">
                     {user.credits} credits
                   </span>
-                </div>
+                </button>
 
+                {onTransactionReport && (
+                  <button
+                    onClick={onTransactionReport}
+                    className="p-2 text-white/60 hover:text-white transition-colors"
+                    title={isAdmin ? "Transaction Reports" : "My Transactions"}
+                  >
+                    <CreditCard className="w-5 h-5" />
+                  </button>
+                )}
 
-                    {onTransactionReport && (
-                      <button
-                        onClick={onTransactionReport}
-                        className="p-2 text-white/60 hover:text-white transition-colors"
-                        title={isAdmin ? "Transaction Reports" : "My Transactions"}
-                      >
-                        <CreditCard className="w-5 h-5" />
-                      </button>
-                    )}
-
-                    {onConfigMenu && (
-                      <button
-                        onClick={onConfigMenu}
-                        className="p-2 text-white/60 hover:text-white transition-colors"
-                        title="Configuration"
-                      >
-                        <Cog className="w-5 h-5" />
-                      </button>
-                    )}
-
+                {onConfigMenu && isAdmin && (
+                  <button
+                    onClick={onConfigMenu}
+                    className="p-2 text-white/60 hover:text-white transition-colors"
+                    title="Configuration"
+                  >
+                    <Cog className="w-5 h-5" />
+                  </button>
+                )}
 
                 <button
                   onClick={logout}
@@ -100,12 +101,66 @@ const Header: React.FC<HeaderProps> = ({ onBuyCredits, onTransactionReport, onCo
             )}
           </div>
         </div>
+
+        {/* Mobile Layout - Credits and Actions */}
+        <div className="flex flex-col space-y-2 sm:hidden">
+          {user && (
+            <>
+              {/* Buy Credits Button - Full Width */}
+              <button 
+                onClick={onBuyCredits}
+                className="w-full flex items-center justify-center space-x-2 bg-white/10 hover:bg-white/20 px-4 py-3 rounded-lg transition-colors"
+              >
+                <ShoppingCart className="w-5 h-5" />
+                <span className="text-base font-medium">Buy Credits</span>
+                <span className="text-sm text-white/80 bg-white/10 px-2 py-1 rounded-full">
+                  {user.credits}
+                </span>
+              </button>
+
+              {/* Action Buttons Row */}
+              <div className="flex justify-center space-x-3">
+                {onTransactionReport && (
+                  <button
+                    onClick={onTransactionReport}
+                    className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
+                    title={isAdmin ? "Transaction Reports" : "My Transactions"}
+                  >
+                    <CreditCard className="w-6 h-6" />
+                    <span className="text-xs">Transactions</span>
+                  </button>
+                )}
+
+
+                {onConfigMenu && isAdmin && (
+                  <button
+                    onClick={onConfigMenu}
+                    className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
+                    title="Configuration"
+                  >
+                    <Cog className="w-6 h-6" />
+                    <span className="text-xs">Settings</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={logout}
+                  className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
+                  title="Logout"
+                >
+                  <LogOut className="w-6 h-6" />
+                  <span className="text-xs">Logout</span>
+                </button>
+              </div>
+            </>
+          )}
+        </div>
         
-        {/* Date, Time & Season Info */}
-        <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/10">
-          <p className="text-sm text-white/80">{formatDate(currentTime)}</p>
-          <p className="text-base font-semibold text-primary-300">{formatTime(currentTime)}</p>
-          <p className="text-sm text-secondary-300">{getSeasonName(currentTime)}</p>
+        {/* Date, Time & Season Info - Responsive */}
+        <div className="flex flex-col space-y-2 mt-4 pt-3 border-t border-white/10 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
+          <p className="text-sm text-white/80 text-center sm:text-left">{formatDate(currentTime)}</p>
+          <p className="text-lg font-semibold text-primary-300 text-center sm:text-base">{formatTime(currentTime)}</p>
+          <p className="text-sm text-secondary-300 text-center sm:text-right">{getSeasonName(currentTime)}</p>
         </div>
       </div>
     </header>

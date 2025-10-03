@@ -143,7 +143,7 @@ const CreditPurchaseModal: React.FC<CreditPurchaseModalProps> = ({
           };
 
           // Call backend to create transaction
-          const transactionResponse = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/transactions', {
+          const transactionResponse = await fetch('http://34.117.220.98/api/transactions', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

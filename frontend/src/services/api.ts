@@ -1,7 +1,21 @@
 import axios from 'axios';
 // import type { AuthResponse, Raga, Artist, Track, ApiResponse } from '../types/index.js';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+// Support both Google Cloud Run and IP-based backend
+const getApiBaseUrl = () => {
+  // Check if we're running from the specific IP
+  if (window.location.hostname === '34.117.220.98' || window.location.hostname.includes('34.117.220.98')) {
+    return 'http://34.117.220.98/api';
+  }
+  // Default to Google Cloud Run
+  return import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Log which backend is being used
+console.log('🔗 [API] Using backend URL:', API_BASE_URL);
+console.log('🔗 [API] Current hostname:', window.location.hostname);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -43,8 +57,13 @@ export const authApi = {
     return response.data;
   },
 
-  signup: async (phone: string, pin: string) => {
-    const response = await api.post('/auth/signup', { phone, pin });
+  checkPhoneExists: async (phone: string) => {
+    const response = await api.post('/auth/check-phone', { phone });
+    return response.data;
+  },
+
+  signup: async (phone: string, pin: string, otp: string) => {
+    const response = await api.post('/auth/signup', { phone, pin, otp });
     return response.data;
   },
 

@@ -55,7 +55,7 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users', {
+      const response = await fetch('http://34.117.220.98/api/users', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -75,8 +75,8 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
   const handleSave = async () => {
     try {
       const url = editingUser 
-        ? `https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users/${editingUser._id}`
-        : 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users';
+        ? `http://34.117.220.98/api/users/${editingUser._id}`
+        : 'http://34.117.220.98/api/users';
       
       const method = editingUser ? 'PUT' : 'POST';
       
@@ -115,7 +115,7 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
     
     try {
-      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users/${userId}`, {
+      const response = await fetch(`http://34.117.220.98/api/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -132,7 +132,7 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
 
   const toggleUserStatus = async (userId: string, isActive: boolean) => {
     try {
-      const response = await fetch(`https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users/${userId}/status`, {
+      const response = await fetch(`http://34.117.220.98/api/users/${userId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -170,7 +170,7 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
         const importedUsers = JSON.parse(e.target?.result as string);
         
         if (Array.isArray(importedUsers)) {
-          const response = await fetch('https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api/users/import', {
+          const response = await fetch('http://34.117.220.98/api/users/import', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
