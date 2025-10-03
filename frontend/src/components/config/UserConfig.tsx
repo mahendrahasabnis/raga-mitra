@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Search, Edit, Trash2, Save, X, Download, Upload, UserCheck, UserX } from 'lucide-react';
+import { ArrowLeft, Search, Edit, Trash2, Save, X, Download, Upload, UserCheck, UserX, UserPlus } from 'lucide-react';
 
 interface UserConfigProps {
   onBack: () => void;
@@ -55,7 +55,9 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://34.117.220.98/api/users', {
+      // Use the same API base URL as other requests
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+      const response = await fetch(`${API_BASE_URL}/users`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -63,7 +65,12 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
       
       if (response.ok) {
         const data = await response.json();
+        console.log('Loaded users:', data);
         setUsers(data);
+      } else {
+        console.error('Failed to load users:', response.status, response.statusText);
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Error details:', errorData);
       }
     } catch (error) {
       console.error('Error loading users:', error);
@@ -74,11 +81,27 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
 
   const handleSave = async () => {
     try {
+      // Validate required fields for new users
+      if (!editingUser && !formData.phone) {
+        alert('Phone number is required for new users');
+        return;
+      }
+
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
       const url = editingUser 
-        ? `http://34.117.220.98/api/users/${editingUser._id}`
-        : 'http://34.117.220.98/api/users';
+        ? `${API_BASE_URL}/users/${editingUser._id}`
+        : `${API_BASE_URL}/users`;
       
       const method = editingUser ? 'PUT' : 'POST';
+      
+      // For editing, only send editable fields (exclude phone and PIN)
+      const requestData = editingUser 
+        ? {
+            credits: formData.credits,
+            role: formData.role,
+            isActive: formData.isActive
+          }
+        : formData;
       
       const response = await fetch(url, {
         method,
@@ -86,7 +109,7 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(requestData)
       });
 
       if (response.ok) {
@@ -99,9 +122,14 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
           role: 'user',
           isActive: true
         });
+        alert(editingUser ? 'User updated successfully!' : 'User created successfully!');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(`Error: ${errorData.message || 'Failed to save user'}`);
       }
     } catch (error) {
       console.error('Error saving user:', error);
+      alert('Error saving user. Please try again.');
     }
   };
 
@@ -115,7 +143,8 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
     if (!confirm('Are you sure you want to delete this user?')) return;
     
     try {
-      const response = await fetch(`http://34.117.220.98/api/users/${userId}`, {
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+      const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -132,8 +161,9 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
 
   const toggleUserStatus = async (userId: string, isActive: boolean) => {
     try {
-      const response = await fetch(`http://34.117.220.98/api/users/${userId}/status`, {
-        method: 'PATCH',
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+      const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
@@ -170,7 +200,8 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
         const importedUsers = JSON.parse(e.target?.result as string);
         
         if (Array.isArray(importedUsers)) {
-          const response = await fetch('http://34.117.220.98/api/users/import', {
+          const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://ragamitra-backend-dev-873534819669.asia-south1.run.app/api';
+          const response = await fetch(`${API_BASE_URL}/users/import`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -287,15 +318,24 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white mb-2">
-                  Phone Number
+                  Phone Number {editingUser && <span className="text-red-400 text-xs">(Cannot be edited)</span>}
                 </label>
                 <input
                   type="tel"
                   value={formData.phone || ''}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    editingUser ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                   placeholder="+1234567890"
+                  disabled={editingUser ? true : false}
+                  required
                 />
+                {editingUser && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Phone number cannot be changed for existing users
+                  </p>
+                )}
               </div>
 
               <div>
@@ -313,18 +353,41 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-white mb-2">
-                Role
-              </label>
-              <select
-                value={formData.role || 'user'}
-                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as 'user' | 'admin' }))}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  Role
+                </label>
+                <select
+                  value={formData.role || 'user'}
+                  onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value as 'user' | 'admin' }))}
+                  className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white mb-2">
+                  PIN {editingUser && <span className="text-red-400 text-xs">(Cannot be edited)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={editingUser ? "••••••" : "0000"}
+                  className={`w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white ${
+                    editingUser ? 'opacity-50 cursor-not-allowed' : 'opacity-75'
+                  }`}
+                  disabled
+                  placeholder="PIN is encrypted"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  {editingUser 
+                    ? "PIN is encrypted and cannot be viewed or edited by administrators"
+                    : "New users will have default PIN '0000' (encrypted in database)"
+                  }
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center space-x-4">
@@ -369,8 +432,26 @@ const UserConfig: React.FC<UserConfigProps> = ({ onBack }) => {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-semibold text-white">User Management</h3>
-              <div className="text-sm text-white/60">
-                {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} found
+              <div className="flex items-center space-x-4">
+                <div className="text-sm text-white/60">
+                  {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''} found
+                </div>
+                <button
+                  onClick={() => {
+                    setEditingUser(null);
+                    setFormData({
+                      phone: '',
+                      credits: 0,
+                      role: 'user',
+                      isActive: true
+                    });
+                    setShowForm(true);
+                  }}
+                  className="flex items-center space-x-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors text-sm"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Add New User</span>
+                </button>
               </div>
             </div>
             
