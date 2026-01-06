@@ -1,0 +1,53 @@
+steps:
+  # Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+      - '-f'
+      - 'backend/Dockerfile'
+      - 'backend'
+
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'aarogya-mitra-backend-integrated'
+      - '--image=gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+      - '--region=asia-south1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--add-cloudsql-instances=platforms-476017:asia-south1:platforms-99-sandbox'
+      - '--set-env-vars=NODE_ENV=production,PLATFORM_NAME=aarogya-mitra,DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,DB_PORT=5432,DB_NAME=platforms_99,DB_USER=app_user,DB_PASSWORD=app_password_2024,DB_SSL=false,SHARED_DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,SHARED_DB_PORT=5432,SHARED_DB_NAME=platforms_99,SHARED_DB_USER=app_user,SHARED_DB_PASSWORD=app_password_2024,JWT_SECRET=aarogya-mitra-jwt-secret-2024,JWT_EXPIRES_IN=7d,CORS_ORIGINS=https://aarogya-mitra-frontend-integrated-bnbuvw3hkq-el.a.run.app,GEMINI_API_KEY=AIzaSyAXyFZy83Xe2i3pJjP2sK444xmQ4uwkjZg'
+      - '--memory=1Gi'
+      - '--cpu=1'
+      - '--max-instances=10'
+      - '--min-instances=0'
+      - '--timeout=300s'
+      - '--port=8080'
+
+images:
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1200s'
+

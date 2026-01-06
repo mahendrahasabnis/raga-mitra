@@ -1,0 +1,48 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:latest'
+      - '-f'
+      - 'frontend/Dockerfile'
+      - 'frontend'
+  
+  # Push the container images to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:latest']
+  
+  # Deploy container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'aarogya-mitra-frontend-integrated'
+      - '--image=gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'
+      - '--platform=managed'
+      - '--region=asia-south1'
+      - '--allow-unauthenticated'
+      - '--port=80'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--max-instances=10'
+      - '--min-instances=0'
+      - '--set-env-vars=VITE_API_BASE_URL=https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api,NODE_ENV=production'
+
+images:
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1200s'
+
