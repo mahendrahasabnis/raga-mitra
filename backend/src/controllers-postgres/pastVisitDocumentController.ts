@@ -1,11 +1,11 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth-postgres';
+import { AuthRequest } from '../middleware/auth';
 import {
   PastVisit,
   PastPrescription,
   Receipt,
   PastTestResult,
-  Patient,
+  // Patient, // Not yet implemented
   Pharmacy,
   DiagnosticsCenter,
   VitalParameter,

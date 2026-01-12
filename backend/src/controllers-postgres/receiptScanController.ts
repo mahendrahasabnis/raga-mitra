@@ -1,10 +1,10 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth-postgres';
+import { AuthRequest } from '../middleware/auth';
 import { 
   PastVisit, 
   UnverifiedDoctor, 
   Receipt,
-  Patient 
+  // Patient // Not yet implemented
 } from '../models-postgres';
 import { extractReceiptData, extractReceiptDataFromBase64, ExtractedReceiptData } from '../services/geminiAIService';
 import { Op } from 'sequelize';
@@ -198,40 +198,35 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
       });
     }
 
-    // Get or create patient record
-    let patientRecord = await Patient.findOne({
-      where: {
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
-      // Try by phone
-      const patientPhone = req.user?.phone;
-      if (patientPhone) {
-        patientRecord = await Patient.findOne({
-          where: {
-            phone: patientPhone,
-            is_active: true
-          }
-        });
-      }
-
-      // If still not found, create a new patient record
-      if (!patientRecord) {
-        patientRecord = await Patient.create({
-          user_id: currentUserId,
-          phone: req.user?.phone || '',
-          name: 'Patient', // Default name, will be updated from user profile if needed
-          sex: 'male',
-          age: 30,
-          year_of_birth: new Date().getFullYear() - 30,
-          registered_by: currentUserId,
-          is_active: true
-        });
-      }
-    }
+    // Get or create patient record (Patient model not yet implemented)
+    let patientRecord = null;
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // if (Patient) {
+    //   patientRecord = await Patient.findOne({
+    //     where: { user_id: currentUserId, is_active: true }
+    //   });
+    //   if (!patientRecord) {
+    //     const patientPhone = req.user?.phone;
+    //     if (patientPhone) {
+    //       patientRecord = await Patient.findOne({
+    //         where: { phone: patientPhone, is_active: true }
+    //       });
+    //     }
+    //     if (!patientRecord) {
+    //       patientRecord = await Patient.create({
+    //         user_id: currentUserId,
+    //         phone: req.user?.phone || '',
+    //         name: 'Patient',
+    //         sex: 'male',
+    //         age: 30,
+    //         year_of_birth: new Date().getFullYear() - 30,
+    //         registered_by: currentUserId,
+    //         is_active: true
+    //       });
+    //     }
+    //   }
+    // }
 
     // Parse receipt date
     let visitDate: Date;
@@ -299,8 +294,8 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
     const receipt = await Receipt.create({
       receipt_id: receiptId,
       appointment_id: appointment_id,
-      patient_id: patientRecord.id,
-      patient_name: patientRecord.name,
+      patient_id: patientRecord?.id || null, // Patient model not yet implemented
+      patient_name: patientRecord?.name || req.user?.phone || 'Patient',
       receipt_type: 'consultation',
       receipt_date: visitDate,
       doctor_name: receiptData.doctor_name,

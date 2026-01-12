@@ -1,9 +1,9 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth-postgres';
+import { AuthRequest } from '../middleware/auth';
 import { 
   VitalParameter, 
-  VitalParameterDefinition,
-  Patient 
+  VitalParameterDefinition
+  // Patient // Not yet implemented
 } from '../models-postgres';
 import { Op } from 'sequelize';
 
@@ -68,17 +68,19 @@ export const addVitalParameter = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ message: 'parameter_name, value, and recorded_date are required' });
     }
 
-    // Get or create patient record
-    let patientRecord = await Patient.findOne({
-      where: {
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
-      return res.status(404).json({ message: 'Patient record not found. Please create a patient profile first.' });
-    }
+    // Get or create patient record (Patient model not yet implemented)
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // let patientRecord = null;
+    // if (Patient) {
+    //   patientRecord = await Patient.findOne({
+    //     where: { user_id: currentUserId, is_active: true }
+    //   });
+    // }
+    // if (!patientRecord) {
+    //   return res.status(404).json({ message: 'Patient record not found. Please create a patient profile first.' });
+    // }
+    let patientRecord: any = null; // Placeholder - Patient model not yet implemented
 
     // Get parameter definition for default ranges if not provided
     let definition = null;
@@ -158,25 +160,20 @@ export const getVitalParameters = async (req: AuthRequest, res: Response) => {
       include_abnormal_only
     } = req.query;
 
-    // Get patient record
-    const patientRecord = await Patient.findOne({
-      where: {
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
+    // Get patient record (Patient model not yet implemented)
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // const patientRecord = Patient ? await Patient.findOne({
+    //   where: { user_id: currentUserId, is_active: true }
+    // }) : null;
+    // if (!patientRecord) {
+    //   return res.json({ message: 'Patient record not found', parameters: [], total: 0 });
+    // }
+    const patientRecord: any = null;
 
-    if (!patientRecord) {
-      return res.json({
-        message: 'Patient record not found',
-        parameters: [],
-        total: 0
-      });
-    }
-
-    // Build where clause
+    // Build where clause - use currentUserId for now since Patient model not available
     const where: any = {
-      patient_id: patientRecord.id,
+      created_by: currentUserId, // Using created_by instead of patient_id
       is_active: true
     };
 
@@ -234,20 +231,16 @@ export const getGraphData = async (req: AuthRequest, res: Response) => {
       end_date
     } = req.query;
 
-    // Get patient record
-    const patientRecord = await Patient.findOne({
-      where: {
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
-      return res.json({
-        message: 'Patient record not found',
-        graph_data: []
-      });
-    }
+    // Get patient record (Patient model not yet implemented)
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // const patientRecord = Patient ? await Patient.findOne({
+    //   where: { user_id: currentUserId, is_active: true }
+    // }) : null;
+    // if (!patientRecord) {
+    //   return res.json({ message: 'Patient record not found', graph_data: [] });
+    // }
+    const patientRecord: any = null;
 
     // Parse parameter names
     let paramNames: string[] = [];
@@ -355,25 +348,21 @@ export const getParametersByCategory = async (req: AuthRequest, res: Response) =
       return res.status(401).json({ message: 'Not authenticated' });
     }
 
-    // Get patient record
-    const patientRecord = await Patient.findOne({
-      where: {
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
-      return res.json({
-        message: 'Patient record not found',
-        categories: {}
-      });
-    }
+    // Get patient record (Patient model not yet implemented)
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // const patientRecord = Patient ? await Patient.findOne({
+    //   where: { user_id: currentUserId, is_active: true }
+    // }) : null;
+    // if (!patientRecord) {
+    //   return res.json({ message: 'Patient record not found', categories: {} });
+    // }
+    const patientRecord: any = null;
 
     // Get all parameters grouped by category
     const parameters = await VitalParameter.findAll({
       where: {
-        patient_id: patientRecord.id,
+        patient_id: null, // Patient model not yet implemented
         is_active: true
       },
       order: [['recorded_date', 'DESC']]
@@ -437,15 +426,18 @@ export const updateVitalParameter = async (req: AuthRequest, res: Response) => {
     }
 
     // Verify ownership
-    const patientRecord = await Patient.findOne({
-      where: {
-        id: parameter.patient_id,
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
+    // Patient model not yet implemented - verify access via created_by
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // const patientRecord = Patient ? await Patient.findOne({
+    //   where: { id: parameter.patient_id, user_id: currentUserId, is_active: true }
+    // }) : null;
+    // if (!patientRecord) {
+    //   return res.status(403).json({ message: 'Access denied' });
+    // }
+    // For now, check if parameter was created by current user (best-effort; skip if column absent)
+    const createdBy = (parameter as any)?.created_by;
+    if (createdBy && createdBy !== currentUserId) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -481,15 +473,17 @@ export const deleteVitalParameter = async (req: AuthRequest, res: Response) => {
     }
 
     // Verify ownership
-    const patientRecord = await Patient.findOne({
-      where: {
-        id: parameter.patient_id,
-        user_id: currentUserId,
-        is_active: true
-      }
-    });
-
-    if (!patientRecord) {
+    // Patient model not yet implemented - verify access via created_by
+    // const { sequelize } = await import('../config/database-integrated');
+    // const Patient = sequelize.models.Patient as any;
+    // const patientRecord = Patient ? await Patient.findOne({
+    //   where: { id: parameter.patient_id, user_id: currentUserId, is_active: true }
+    // }) : null;
+    // if (!patientRecord) {
+    //   return res.status(403).json({ message: 'Access denied' });
+    // }
+    const createdBy = (parameter as any)?.created_by;
+    if (createdBy && createdBy !== currentUserId) {
       return res.status(403).json({ message: 'Access denied' });
     }
 

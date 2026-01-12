@@ -1,7 +1,7 @@
 import express from 'express';
-import { authenticate } from '../middleware/auth-postgres';
+import { authenticate } from '../middleware/auth';
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth-postgres';
+import { AuthRequest } from '../middleware/auth';
 
 // Note: Practice/Specialization repository functions are handled by HCP routes
 // These routes are kept for backward compatibility but return empty responses

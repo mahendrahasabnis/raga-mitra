@@ -1,5 +1,5 @@
 import { Table, Column, Model, DataType, ForeignKey, CreatedAt, UpdatedAt, PrimaryKey, Default, AllowNull, Index } from 'sequelize-typescript';
-import { Patient } from './Patient';
+// import { Patient } from './Patient'; // Not yet implemented
 
 export interface IVitalParameterValue {
   parameter_name: string;
@@ -25,7 +25,7 @@ export class VitalParameter extends Model {
   @Column(DataType.UUID)
   id!: string;
 
-  @ForeignKey(() => Patient)
+  // @ForeignKey(() => Patient) // Patient model not yet implemented
   @AllowNull(false)
   @Column(DataType.UUID)
   patient_id!: string;

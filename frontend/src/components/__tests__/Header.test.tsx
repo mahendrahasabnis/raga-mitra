@@ -42,7 +42,7 @@ describe('Header Component', () => {
 
   it('renders the app title', () => {
     render(<Header {...mockProps} />);
-    expect(screen.getByText('Raga-Mitra')).toBeInTheDocument();
+    expect(screen.getByText('Aarogya Mitra')).toBeInTheDocument();
   });
 
   it('displays user credits', () => {

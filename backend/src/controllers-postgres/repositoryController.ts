@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth-postgres';
+import { AuthRequest } from '../middleware/auth';
 import {
   UnverifiedDoctor,
   Pharmacy,

@@ -1,17 +1,18 @@
 // Export all PostgreSQL models
 // NOTE: User and UserPrivilege models removed - now using SharedUser and PlatformPrivilege from platforms_99 database
-export { HealthcareProvider } from './HealthcareProvider';
-export { Clinic } from './Clinic';
-export { Practice } from './Practice';
-export { DoctorProfile } from './DoctorProfile';
-export { DoctorAssignment } from './DoctorAssignment';
-export { DoctorSchedule } from './DoctorSchedule';
-export { ReceptionistProfile } from './ReceptionistProfile';
-export { ReceptionistAssignment } from './ReceptionistAssignment';
-export { Patient } from './Patient';
-export { Appointment } from './Appointment';
-export { AppointmentWorkflowLog } from './AppointmentWorkflowLog';
-export { AppointmentStatus, WORKFLOW_STAGES, TOTAL_WORKFLOW_STAGES } from './types';
+// Only export models that actually exist
+// export { HealthcareProvider } from './HealthcareProvider'; // Not yet implemented
+// export { Clinic } from './Clinic'; // Not yet implemented
+// export { Practice } from './Practice'; // Not yet implemented
+// export { DoctorProfile } from './DoctorProfile'; // Not yet implemented
+// export { DoctorAssignment } from './DoctorAssignment'; // Not yet implemented
+// export { DoctorSchedule } from './DoctorSchedule'; // Not yet implemented
+// export { ReceptionistProfile } from './ReceptionistProfile'; // Not yet implemented
+// export { ReceptionistAssignment } from './ReceptionistAssignment'; // Not yet implemented
+// export { Patient } from './Patient'; // Not yet implemented
+// export { Appointment } from './Appointment'; // Not yet implemented
+// export { AppointmentWorkflowLog } from './AppointmentWorkflowLog'; // Not yet implemented
+// export { AppointmentStatus, WORKFLOW_STAGES, TOTAL_WORKFLOW_STAGES } from './types'; // Not yet implemented
 export { PastVisit } from './PastVisit';
 export { UnverifiedDoctor } from './UnverifiedDoctor';
 export { PastPrescription } from './PastPrescription';
@@ -24,17 +25,18 @@ export { VitalParameter } from './VitalParameter';
 export { VitalParameterDefinition } from './VitalParameterDefinition';
 
 // Model array for Sequelize initialization
-import { HealthcareProvider } from './HealthcareProvider';
-import { Clinic } from './Clinic';
-import { Practice } from './Practice';
-import { DoctorProfile } from './DoctorProfile';
-import { DoctorAssignment } from './DoctorAssignment';
-import { DoctorSchedule } from './DoctorSchedule';
-import { ReceptionistProfile } from './ReceptionistProfile';
-import { ReceptionistAssignment } from './ReceptionistAssignment';
-import { Patient } from './Patient';
-import { Appointment } from './Appointment';
-import { AppointmentWorkflowLog } from './AppointmentWorkflowLog';
+// Only import models that actually exist
+// import { HealthcareProvider } from './HealthcareProvider'; // Not yet implemented
+// import { Clinic } from './Clinic'; // Not yet implemented
+// import { Practice } from './Practice'; // Not yet implemented
+// import { DoctorProfile } from './DoctorProfile'; // Not yet implemented
+// import { DoctorAssignment } from './DoctorAssignment'; // Not yet implemented
+// import { DoctorSchedule } from './DoctorSchedule'; // Not yet implemented
+// import { ReceptionistProfile } from './ReceptionistProfile'; // Not yet implemented
+// import { ReceptionistAssignment } from './ReceptionistAssignment'; // Not yet implemented
+// import { Patient } from './Patient'; // Not yet implemented
+// import { Appointment } from './Appointment'; // Not yet implemented
+// import { AppointmentWorkflowLog } from './AppointmentWorkflowLog'; // Not yet implemented
 import { PastVisit } from './PastVisit';
 import { UnverifiedDoctor } from './UnverifiedDoctor';
 import { PastPrescription } from './PastPrescription';
@@ -47,17 +49,17 @@ import { VitalParameter } from './VitalParameter';
 import { VitalParameterDefinition } from './VitalParameterDefinition';
 
 export const models = [
-  HealthcareProvider,
-  Clinic,
-  Practice,
-  DoctorProfile,
-  DoctorAssignment,
-  DoctorSchedule,
-  ReceptionistProfile,
-  ReceptionistAssignment,
-  Patient,
-  Appointment,
-  AppointmentWorkflowLog,
+  // HealthcareProvider, // Not yet implemented
+  // Clinic, // Not yet implemented
+  // Practice, // Not yet implemented
+  // DoctorProfile, // Not yet implemented
+  // DoctorAssignment, // Not yet implemented
+  // DoctorSchedule, // Not yet implemented
+  // ReceptionistProfile, // Not yet implemented
+  // ReceptionistAssignment, // Not yet implemented
+  // Patient, // Not yet implemented
+  // Appointment, // Not yet implemented
+  // AppointmentWorkflowLog, // Not yet implemented
   PastVisit,
   UnverifiedDoctor,
   PastPrescription,
@@ -65,8 +67,8 @@ export const models = [
   PastTestResult,
   Pharmacy,
   DiagnosticsCenter,
-  MedicinePurchase,
-  VitalParameter,
-  VitalParameterDefinition
+  MedicinePurchase
+  // VitalParameter, // Has decorator issues - exclude for now
+  // VitalParameterDefinition // Has decorator issues - exclude for now
 ];
 

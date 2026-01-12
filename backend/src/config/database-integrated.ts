@@ -1,46 +1,14 @@
 import { Sequelize } from 'sequelize-typescript';
 import dotenv from 'dotenv';
 import path from 'path';
+import { sharedModels, initSharedModels } from '../models-shared';
 
 dotenv.config({ path: path.join(__dirname, '../../../.env.integrated') });
 
-// Import all models
-import { sharedModels } from '../models-shared';
-
-// PostgreSQL models will use the same database
-// Import models but they'll be configured separately
-import { 
-  HealthcareProvider,
-  Clinic,
-  Practice,
-  DoctorProfile,
-  DoctorAssignment,
-  DoctorSchedule,
-  ReceptionistProfile,
-  ReceptionistAssignment,
-  Patient,
-  Appointment,
-  AppointmentWorkflowLog,
-  PastVisit,
-  UnverifiedDoctor,
-  PastPrescription,
-  Receipt,
-  PastTestResult,
-  Pharmacy,
-  DiagnosticsCenter,
-  MedicinePurchase,
-  VitalParameter,
-  VitalParameterDefinition
-} from '../models-postgres';
-
-// Unified database configuration for platforms_99
-// Both user management and application data
-const config = {
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432'),
-  database: process.env.DB_NAME || 'platforms_99',
-  username: process.env.DB_USER || 'app_user',
-  password: process.env.DB_PASSWORD || 'app_password_2024',
+// Separate connections:
+// - sharedSequelize: platforms_99 (users / platform_privileges)
+// - appSequelize: aarogya_mitra (app data)
+const baseConfig = {
   dialect: 'postgres' as const,
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
   pool: {
@@ -57,52 +25,82 @@ const config = {
   }
 };
 
-// Create single Sequelize instance for all models
-export const sequelize = new Sequelize({
-  ...config,
+const sharedConfig = {
+  host: process.env.SHARED_DB_HOST || process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.SHARED_DB_PORT || process.env.DB_PORT || '5432'),
+  database: process.env.SHARED_DB_NAME || process.env.DB_NAME || 'platforms_99',
+  username: process.env.SHARED_DB_USER || process.env.DB_USER || 'app_user',
+  password: process.env.SHARED_DB_PASSWORD || process.env.DB_PASSWORD || 'app_password_2024',
+};
+
+const appConfig = {
+  host: process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.DB_PORT || '5432'),
+  database: process.env.DB_NAME || 'aarogya_mitra',
+  username: process.env.DB_USER || 'app_user',
+  password: process.env.DB_PASSWORD || 'app_password_2024',
+};
+
+export const sharedSequelize = new Sequelize({
+  database: sharedConfig.database,
+  username: sharedConfig.username,
+  password: sharedConfig.password,
+  host: sharedConfig.host,
+  port: sharedConfig.port,
+  dialect: baseConfig.dialect,
+  logging: baseConfig.logging,
+  pool: baseConfig.pool,
+  dialectOptions: baseConfig.dialectOptions,
   define: {
-    // Disable foreign key constraints - we use logical relationships via appointment_id
     freezeTableName: true,
     underscored: true,
     timestamps: true
-  },
-  models: [
-    ...sharedModels,
-    HealthcareProvider,
-    Clinic,
-    Practice,
-    DoctorProfile,
-    DoctorAssignment,
-    DoctorSchedule,
-    ReceptionistProfile,
-    ReceptionistAssignment,
-    Patient,
-    Appointment,
-    AppointmentWorkflowLog,
-    PastVisit,
-    UnverifiedDoctor,
-    PastPrescription,
-    Receipt,
-    PastTestResult,
-    Pharmacy,
-    DiagnosticsCenter,
-    MedicinePurchase,
-    VitalParameter,
-    VitalParameterDefinition
-  ]
-});
+  }
+} as any);
 
-// Export as both sharedSequelize and appSequelize for compatibility
-export const sharedSequelize = sequelize;
-export const appSequelize = sequelize;
+export const appSequelize = new Sequelize({
+  database: appConfig.database,
+  username: appConfig.username,
+  password: appConfig.password,
+  host: appConfig.host,
+  port: appConfig.port,
+  dialect: baseConfig.dialect,
+  logging: baseConfig.logging,
+  pool: baseConfig.pool,
+  dialectOptions: baseConfig.dialectOptions,
+  define: {
+    freezeTableName: true,
+    underscored: true,
+    timestamps: true
+  }
+} as any);
 
-// Test connection
+// Initialize shared models on the shared connection (users / platform_privileges)
+initSharedModels(sharedSequelize);
+const allShared = [...sharedModels];
+if ((sharedSequelize as any).addModels && typeof (sharedSequelize as any).addModels === 'function') {
+  (sharedSequelize as any).addModels(allShared);
+} else {
+  allShared.forEach((Model: any) => {
+    if (Model && typeof Model.init === 'function' && !Model.initialized) {
+      Model.init(Model.rawAttributes || {}, { sequelize: sharedSequelize });
+    }
+  });
+}
+initSharedModels(sharedSequelize);
+
+// For compatibility: default export uses app DB
+export const sequelize = appSequelize;
+export default appSequelize;
+
+// Test connections
 export const testConnection = async (): Promise<boolean> => {
   try {
-    await sequelize.authenticate();
-    console.log('✅ Database connection established (Integrated Mode)');
-    console.log(`📊 Database: ${config.database} @ ${config.host}:${config.port}`);
-    console.log(`📦 Models loaded: User Management + Aarogya-Mitra`);
+    await sharedSequelize.authenticate();
+    await appSequelize.authenticate();
+    console.log('✅ DB connections established');
+    console.log(`📊 Shared DB: ${sharedConfig.database} @ ${sharedConfig.host}:${sharedConfig.port}`);
+    console.log(`📊 App DB: ${appConfig.database} @ ${appConfig.host}:${appConfig.port}`);
     return true;
   } catch (error) {
     console.error('❌ Unable to connect to database:', error);
@@ -110,26 +108,23 @@ export const testConnection = async (): Promise<boolean> => {
   }
 };
 
-// Sync database (create tables if they don't exist)
+// Sync app DB only (shared DB already exists)
 export const syncDatabase = async (force: boolean = false): Promise<void> => {
   try {
-    await sequelize.sync({ force, alter: false });
-    console.log(`✅ Database synchronized ${force ? '(forced - all data cleared!)' : '(safe mode)'}`);
+    await appSequelize.sync({ force, alter: false });
+    console.log(`✅ App database synchronized ${force ? '(forced)' : '(safe mode)'}`);
   } catch (error) {
     console.error('❌ Database sync failed:', error);
     throw error;
   }
 };
 
-// Close connection
 export const closeConnection = async (): Promise<void> => {
   try {
-    await sequelize.close();
-    console.log('✅ Database connection closed');
+    await sharedSequelize.close();
+    await appSequelize.close();
+    console.log('✅ Database connections closed');
   } catch (error) {
-    console.error('❌ Error closing database connection:', error);
+    console.error('❌ Error closing database connections:', error);
   }
 };
-
-export default sequelize;
-

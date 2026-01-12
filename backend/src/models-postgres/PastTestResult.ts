@@ -1,5 +1,5 @@
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo, CreatedAt, UpdatedAt, PrimaryKey, Default, AllowNull } from 'sequelize-typescript';
-import { Patient } from './Patient';
+// import { Patient } from './Patient'; // Not yet implemented
 import { DiagnosticsCenter } from './DiagnosticsCenter';
 
 // Test parameter structure
@@ -34,7 +34,7 @@ export class PastTestResult extends Model {
   appointment_id!: string;
 
   // Patient reference
-  @ForeignKey(() => Patient)
+  // @ForeignKey(() => Patient) // Patient model not yet implemented
   @AllowNull(false)
   @Column(DataType.UUID)
   patient_id!: string;

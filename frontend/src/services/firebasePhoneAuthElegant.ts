@@ -76,13 +76,13 @@ class ElegantFirebasePhoneAuthService {
       // Create reCAPTCHA verifier with elegant settings
       this.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         'size': 'invisible',
-        'callback': (response: string) => {
+        'callback': (_response: string) => {
           console.log('✅ [ELEGANT FIREBASE AUTH] reCAPTCHA solved automatically');
         },
         'expired-callback': () => {
           console.warn('⚠️ [ELEGANT FIREBASE AUTH] reCAPTCHA expired, auto-resolving');
           this.recaptchaVerifier?.render().then((widgetId) => {
-            this.recaptchaVerifier?.reset(widgetId);
+            // this.recaptchaVerifier?.reset(widgetId); // reset() method not available in current RecaptchaVerifier type
           });
         }
       });
@@ -194,7 +194,7 @@ class ElegantFirebasePhoneAuthService {
     try {
       console.log('🔐 [ELEGANT FIREBASE AUTH] Verifying OTP');
       
-      const result = await confirmationResult.confirm(otp);
+      await confirmationResult.confirm(otp);
       console.log('✅ [ELEGANT FIREBASE AUTH] OTP verified successfully!');
       
       return { 

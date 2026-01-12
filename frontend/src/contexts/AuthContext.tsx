@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
 export interface User {
   id: string;
@@ -6,7 +6,7 @@ export interface User {
   name?: string;
   platform: string;
   role: string;
-  credits: number;
+  credits?: number; // Optional - kept for backward compatibility with SharedUser but not displayed in UI
   privileges?: Array<{
     platform: string;
     roles: string[];

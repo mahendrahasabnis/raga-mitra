@@ -1,14 +1,64 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Building2, Plus, MapPin, Phone, Mail, Users, Calendar, Clock, Edit2, Save, X } from 'lucide-react';
-import HCPRegistration from './HCPRegistration';
+// TODO: These components need to be created
+// import HCPRegistration from './HCPRegistration';
+// import ClinicManagement from './ClinicManagement';
+// import PracticeManagement from './PracticeManagement';
+// import DoctorManagement from './DoctorManagement';
+// import ReceptionDutyManagement from './ReceptionDutyManagement';
+// import HCPTreeView from './HCPTreeView';
+// import HCPTreeViewSplit from './HCPTreeViewSplit';
 import { hcpApi } from '../../services/api';
-import ClinicManagement from './ClinicManagement';
-import PracticeManagement from './PracticeManagement';
-import DoctorManagement from './DoctorManagement';
-import ReceptionDutyManagement from './ReceptionDutyManagement';
-import HCPTreeView from './HCPTreeView';
-import HCPTreeViewSplit from './HCPTreeViewSplit';
+
+// Placeholder components
+const HCPRegistration: React.FC<{ onSuccess: (hcp: any) => void; onCancel: () => void }> = ({ onSuccess, onCancel }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">Register HCP</h2>
+    <p className="text-gray-600 mb-4">HCP Registration component is under development.</p>
+    <button onClick={onCancel} className="px-4 py-2 bg-gray-300 rounded">Cancel</button>
+  </div>
+);
+
+const ClinicManagement: React.FC<{ hcp: any; onBack: () => void }> = ({ hcp, onBack }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">Clinic Management</h2>
+    <p className="text-gray-600 mb-4">Clinic Management component is under development.</p>
+    <button onClick={onBack} className="px-4 py-2 bg-gray-300 rounded">Back</button>
+  </div>
+);
+
+const PracticeManagement: React.FC<{ hcp: any; onBack: () => void }> = ({ hcp, onBack }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">Practice Management</h2>
+    <p className="text-gray-600 mb-4">Practice Management component is under development.</p>
+    <button onClick={onBack} className="px-4 py-2 bg-gray-300 rounded">Back</button>
+  </div>
+);
+
+const DoctorManagement: React.FC<{ hcp: any; onBack: () => void }> = ({ hcp, onBack }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">Doctor Management</h2>
+    <p className="text-gray-600 mb-4">Doctor Management component is under development.</p>
+    <button onClick={onBack} className="px-4 py-2 bg-gray-300 rounded">Back</button>
+  </div>
+);
+
+const ReceptionDutyManagement: React.FC<{ hcp: any; onBack: () => void }> = ({ hcp, onBack }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">Reception Duty Management</h2>
+    <p className="text-gray-600 mb-4">Reception Duty Management component is under development.</p>
+    <button onClick={onBack} className="px-4 py-2 bg-gray-300 rounded">Back</button>
+  </div>
+);
+
+const HCPTreeViewSplit: React.FC<{ hcpId: string; onBack: () => void }> = ({ hcpId, onBack }) => (
+  <div className="p-6 bg-white rounded-lg shadow-lg">
+    <h2 className="text-xl font-bold mb-4">HCP Tree View</h2>
+    <p className="text-gray-600 mb-4">HCP Tree View component is under development.</p>
+    <button onClick={onBack} className="px-4 py-2 bg-gray-300 rounded">Back</button>
+  </div>
+);
 
 interface HCP {
   _id: string;
@@ -32,6 +82,7 @@ interface HCP {
   clinics: any[];
   practices: any[];
   doctors: any[];
+  licenses?: any[];
   createdAt: string;
 }
 
@@ -113,7 +164,9 @@ const HCPManagement: React.FC = () => {
     try {
       setLoading(true);
       const data = await hcpApi.getAll();
-      setHcps(data.hcps);
+      // Support both {hcps: []} shape and raw array
+      const list = Array.isArray(data) ? data : Array.isArray(data?.hcps) ? data.hcps : [];
+      setHcps(list);
     } catch (err: any) {
       setError(err.message);
     } finally {

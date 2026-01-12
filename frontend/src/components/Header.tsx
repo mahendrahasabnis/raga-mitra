@@ -1,17 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { ShoppingCart, LogOut, CreditCard, Cog } from 'lucide-react';
-import { getCurrentMarathiMonth, getCurrentSeason, formatSeasonDisplay } from '../utils/marathiCalendar';
+import React, { useState, useEffect, useMemo } from "react";
+import { NavLink } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
+import { LogOut, Stethoscope, Users, Calendar, Briefcase, Home } from "lucide-react";
 
 interface HeaderProps {
-  onBuyCredits: () => void;
-  onTransactionReport?: () => void;
-  onConfigMenu?: () => void;
-  isAdmin?: boolean;
+  onBuyCredits?: () => void; // Keep for backward compatibility, but won't be used
 }
 
-const Header: React.FC<HeaderProps> = ({ onBuyCredits, onTransactionReport, onConfigMenu, isAdmin }) => {
-  const { user, logout } = useAuth();
+const Header: React.FC<HeaderProps> = () => {
+  const { user, logout, hasRole } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -34,133 +31,91 @@ const Header: React.FC<HeaderProps> = ({ onBuyCredits, onTransactionReport, onCo
     const day = date.getDate().toString().padStart(2, '0');
     const month = date.toLocaleDateString('en-US', { month: 'short' });
     const year = date.getFullYear();
-    const marathiMonth = getCurrentMarathiMonth(date);
-    return `${day}-${month}-${year} (${marathiMonth.marathi})`;
+    return `${day}-${month}-${year}`;
   };
 
-  const getSeasonName = (date: Date): string => {
-    const currentSeason = getCurrentSeason(date);
-    return formatSeasonDisplay(currentSeason.english);
-  };
+  const navItems = useMemo(() => {
+    const items: Array<{ to: string; label: string; icon: React.FC<any>; show: boolean }> = [
+      { to: "/", label: "Home", icon: Home, show: true },
+      { to: "/appointments", label: "Appointments", icon: Calendar, show: true },
+      { to: "/dashboard/doctor", label: "Doctor", icon: Stethoscope, show: hasRole("doctor") },
+      { to: "/dashboard/reception", label: "Reception", icon: Users, show: hasRole("reception") || hasRole("receptionist") },
+      { to: "/dashboard/billing", label: "Billing", icon: Briefcase, show: hasRole("billing") },
+      { to: "/hcp", label: "HCP Admin", icon: Briefcase, show: hasRole("owner") || hasRole("admin") || hasRole("clinic_admin") },
+    ];
+    return items.filter((i) => i.show);
+  }, [hasRole]);
 
   return (
-    <header className="glass-effect border-b border-white/20">
+    <header className="glass-effect border-b border-red-500/30">
       <div className="max-w-7xl mx-auto px-3 py-3 sm:px-4 sm:py-4">
-        {/* App Name - Full Width on Mobile */}
-        <div className="flex justify-center mb-3 sm:hidden">
-          <h1 className="text-xl font-bold text-gradient">Raga-Mitra</h1>
-        </div>
-
-        {/* Desktop Layout */}
-        <div className="hidden sm:flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <h1 className="text-lg font-bold text-gradient">Raga-Mitra</h1>
+            <h1 className="text-lg font-bold text-gradient">Aarogya Mitra</h1>
+            {navItems.length > 0 && (
+              <nav className="hidden sm:flex items-center space-x-3">
+                {navItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      `flex items-center space-x-1 px-3 py-2 rounded-md text-sm ${
+                        isActive
+                          ? "bg-red-600 text-white"
+                          : "text-white/70 hover:text-white hover:bg-red-600/30"
+                      }`
+                    }
+                  >
+                    <item.icon className="w-4 h-4" />
+                    <span>{item.label}</span>
+                  </NavLink>
+                ))}
+              </nav>
+            )}
           </div>
           <div className="flex items-center space-x-4">
+            <div className="hidden sm:flex flex-col text-right text-xs text-white/70">
+              <span>{formatDate(currentTime)}</span>
+              <span className="text-sm text-red-300 font-semibold">{formatTime(currentTime)}</span>
+            </div>
             {user && (
-              <>
-                <button 
-                  onClick={onBuyCredits}
-                  className="flex items-center space-x-2 bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  <span className="text-sm">Buy</span>
-                  <span className="text-xs text-white/80">
-                    {user.credits} credits
-                  </span>
-                </button>
-
-                {onTransactionReport && (
-                  <button
-                    onClick={onTransactionReport}
-                    className="p-2 text-white/60 hover:text-white transition-colors"
-                    title={isAdmin ? "Transaction Reports" : "My Transactions"}
-                  >
-                    <CreditCard className="w-5 h-5" />
-                  </button>
-                )}
-
-                {onConfigMenu && isAdmin && (
-                  <button
-                    onClick={onConfigMenu}
-                    className="p-2 text-white/60 hover:text-white transition-colors"
-                    title="Configuration"
-                  >
-                    <Cog className="w-5 h-5" />
-                  </button>
-                )}
-
-                <button
-                  onClick={logout}
-                  className="p-2 text-white/60 hover:text-white transition-colors"
-                  title="Logout"
-                >
-                  <LogOut className="w-5 h-5" />
-                </button>
-              </>
+              <button
+                onClick={logout}
+                className="p-2 text-white/70 hover:text-white transition-colors"
+                title="Logout"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
             )}
           </div>
         </div>
 
-        {/* Mobile Layout - Credits and Actions */}
-        <div className="flex flex-col space-y-2 sm:hidden">
-          {user && (
-            <>
-              {/* Buy Credits Button - Full Width */}
-              <button 
-                onClick={onBuyCredits}
-                className="w-full flex items-center justify-center space-x-2 bg-white/10 hover:bg-white/20 px-4 py-3 rounded-lg transition-colors"
+        {/* Mobile nav */}
+        {navItems.length > 0 && (
+          <div className="sm:hidden mt-3 flex flex-wrap gap-2">
+            {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center space-x-1 px-3 py-2 rounded-md text-xs ${
+                    isActive
+                      ? "bg-red-600 text-white"
+                      : "text-white/70 hover:text-white hover:bg-red-600/30"
+                  }`
+                }
               >
-                <ShoppingCart className="w-5 h-5" />
-                <span className="text-base font-medium">Buy Credits</span>
-                <span className="text-sm text-white/80 bg-white/10 px-2 py-1 rounded-full">
-                  {user.credits}
-                </span>
-              </button>
+                <item.icon className="w-4 h-4" />
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+        )}
 
-              {/* Action Buttons Row */}
-              <div className="flex justify-center space-x-3">
-                {onTransactionReport && (
-                  <button
-                    onClick={onTransactionReport}
-                    className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
-                    title={isAdmin ? "Transaction Reports" : "My Transactions"}
-                  >
-                    <CreditCard className="w-6 h-6" />
-                    <span className="text-xs">Transactions</span>
-                  </button>
-                )}
-
-
-                {onConfigMenu && isAdmin && (
-                  <button
-                    onClick={onConfigMenu}
-                    className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
-                    title="Configuration"
-                  >
-                    <Cog className="w-6 h-6" />
-                    <span className="text-xs">Settings</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={logout}
-                  className="flex flex-col items-center space-y-1 p-3 text-white/60 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-lg"
-                  title="Logout"
-                >
-                  <LogOut className="w-6 h-6" />
-                  <span className="text-xs">Logout</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-        
-        {/* Date, Time & Season Info - Responsive */}
-        <div className="flex flex-col space-y-2 mt-4 pt-3 border-t border-white/10 sm:flex-row sm:items-center sm:justify-between sm:space-y-0">
-          <p className="text-sm text-white/80 text-center sm:text-left">{formatDate(currentTime)}</p>
-          <p className="text-lg font-semibold text-primary-300 text-center sm:text-base">{formatTime(currentTime)}</p>
-          <p className="text-sm text-secondary-300 text-center sm:text-right">{getSeasonName(currentTime)}</p>
+        {/* Date & Time for mobile */}
+        <div className="sm:hidden mt-2 text-center text-xs text-white/70">
+          <span className="block">{formatDate(currentTime)}</span>
+          <span className="text-sm text-red-300 font-semibold">{formatTime(currentTime)}</span>
         </div>
       </div>
     </header>

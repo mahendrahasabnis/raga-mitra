@@ -33,7 +33,7 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--add-cloudsql-instances=platforms-476017:asia-south1:platforms-99-sandbox'
-      - '--set-env-vars=NODE_ENV=production,PLATFORM_NAME=aarogya-mitra,DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,DB_PORT=5432,DB_NAME=platforms_99,DB_USER=app_user,DB_PASSWORD=app_password_2024,DB_SSL=false,SHARED_DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,SHARED_DB_PORT=5432,SHARED_DB_NAME=platforms_99,SHARED_DB_USER=app_user,SHARED_DB_PASSWORD=app_password_2024,JWT_SECRET=aarogya-mitra-jwt-secret-2024,JWT_EXPIRES_IN=7d,CORS_ORIGINS=https://aarogya-mitra-frontend-integrated-bnbuvw3hkq-el.a.run.app,GEMINI_API_KEY=AIzaSyAXyFZy83Xe2i3pJjP2sK444xmQ4uwkjZg'
+      - '--set-env-vars=NODE_ENV=production,PLATFORM_NAME=aarogya-mitra,DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,DB_PORT=5432,DB_NAME=aarogya_mitra,DB_USER=app_user,DB_PASSWORD=app_password_2024,DB_SSL=false,SHARED_DB_HOST=/cloudsql/platforms-476017:asia-south1:platforms-99-sandbox,SHARED_DB_PORT=5432,SHARED_DB_NAME=platforms_99,SHARED_DB_USER=app_user,SHARED_DB_PASSWORD=app_password_2024,JWT_SECRET=aarogya-mitra-jwt-secret-2024,JWT_EXPIRES_IN=7d,CORS_ORIGINS=https://aarogya-mitra-frontend-integrated-bnbuvw3hkq-el.a.run.app,GEMINI_API_KEY=AIzaSyAXyFZy83Xe2i3pJjP2sK444xmQ4uwkjZg'
       - '--memory=1Gi'
       - '--cpu=1'
       - '--max-instances=10'

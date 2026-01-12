@@ -1,5 +1,5 @@
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo, CreatedAt, UpdatedAt, PrimaryKey, Default, AllowNull } from 'sequelize-typescript';
-import { Patient } from './Patient';
+// import { Patient } from './Patient'; // Not yet implemented
 import { UnverifiedDoctor } from './UnverifiedDoctor';
 
 @Table({
@@ -18,8 +18,8 @@ export class PastVisit extends Model {
   @Column({ type: DataType.STRING(100), unique: true })
   appointment_id!: string; // Patient-generated unique ID for this visit
 
-  // Patient reference
-  @ForeignKey(() => Patient)
+  // Patient reference (Patient model not yet implemented)
+  // @ForeignKey(() => Patient)
   @AllowNull(false)
   @Column(DataType.UUID)
   patient_id!: string;

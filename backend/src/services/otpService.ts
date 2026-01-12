@@ -1,13 +1,13 @@
-import { SmsClient } from '@azure/communication-sms';
+import { SmsClient as AzureSmsClient } from '@azure/communication-sms';
 
 class OTPService {
-  private smsClient: SmsClient | null = null;
+  private smsClient: any | null = null;
   private otpStore: Map<string, { otp: string; expiresAt: Date }> = new Map();
 
   constructor() {
     const connectionString = process.env.AZURE_COMMUNICATION_CONNECTION_STRING;
     if (connectionString) {
-      this.smsClient = new SmsClient(connectionString);
+      this.smsClient = new (AzureSmsClient as any)(connectionString);
     }
   }
 

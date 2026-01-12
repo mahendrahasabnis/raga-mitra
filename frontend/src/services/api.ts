@@ -1,25 +1,33 @@
 import axios from 'axios';
 // import type { AuthResponse, Raga, Artist, Track, ApiResponse } from '../types/index.js';
 
-// Support local development, IP-based backend, and Google Cloud Run
+// Support separate base URLs for core health APIs and user/identity APIs (99platforms)
 const getApiBaseUrl = () => {
-  // Check if we're running locally (localhost or 127.0.0.1)
+  // Health/data backend (Aarogya Mitra)
+  if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '192.168.1.14') {
-    return 'http://localhost:3002/api';
+    return 'https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api';
   }
-  // Check if we're running from the specific IP
   if (window.location.hostname === '34.117.220.98' || window.location.hostname.includes('34.117.220.98')) {
     return 'http://34.117.220.98/api';
   }
-  // Default to Google Cloud Run (integrated backend)
-  return import.meta.env.VITE_API_BASE_URL || 'https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api';
+  return 'https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api';
+};
+
+const getUserApiBaseUrl = () => {
+  // 99platforms user/identity backend
+  if (import.meta.env.VITE_USER_API_BASE_URL) return import.meta.env.VITE_USER_API_BASE_URL;
+  // Default to Aarogya backend (which proxies to 99platforms to avoid CORS/auth issues)
+  return API_BASE_URL;
 };
 
 const API_BASE_URL = getApiBaseUrl();
+const USER_API_BASE_URL = getUserApiBaseUrl();
 
 // Log which backend is being used
 console.log('🔗 [API] Using backend URL:', API_BASE_URL);
 console.log('🔗 [API] Current hostname:', window.location.hostname);
+console.log('🔗 [API] Using user backend URL:', USER_API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -28,14 +36,24 @@ const api = axios.create({
   },
 });
 
+const userApiClient = axios.create({
+  baseURL: USER_API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
 // Add auth token to requests
-api.interceptors.request.use((config) => {
+const attachAuth = (config: any) => {
   const token = localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
-});
+};
+
+api.interceptors.request.use(attachAuth);
+userApiClient.interceptors.request.use(attachAuth);
 
 // Handle auth errors
 api.interceptors.response.use(
@@ -49,6 +67,13 @@ api.interceptors.response.use(
       if (token && (token.startsWith('test-token-') || isTestMode)) {
         // Test mode - don't clear auth, just reject the error silently
         console.log('🧪 [API] Test mode detected, skipping logout on 401. Error:', error.response?.data?.message || error.message);
+        return Promise.reject(error);
+      }
+      // For non-auth feature routes, avoid hard logout to prevent UX loop while backend warms up
+      const url: string = error.config?.url || '';
+      const nonAuthPaths = ['/health', '/resources', '/hcp', '/appointments'];
+      if (nonAuthPaths.some((p) => url.includes(p))) {
+        console.warn('⚠️ [API] 401 on non-auth route, preserving session. Path:', url, 'Message:', error.response?.data?.message);
         return Promise.reject(error);
       }
       // Real token - handle 401 normally
@@ -92,6 +117,66 @@ export const authApi = {
   resetPin: async (phone: string, otp: string, newPin: string) => {
     const response = await api.post('/auth/reset-pin', { phone, otp, newPin });
     return response.data;
+  },
+};
+
+// Health module
+export const healthApi = {
+  getAppointments: async () => {
+    const response = await api.get('/health/appointments');
+    return response.data;
+  },
+  createAppointment: async (payload: any) => {
+    const response = await api.post('/health/appointments', payload);
+    return response.data;
+  },
+  getVitals: async () => {
+    const response = await api.get('/health/vitals');
+    return response.data;
+  },
+  addVital: async (payload: any) => {
+    const response = await api.post('/health/vitals', payload);
+    return response.data;
+  },
+  uploadReport: async (payload: any) => {
+    const response = await api.post('/health/reports/upload', payload);
+    return response.data;
+  },
+  extractReport: async (reportId: string) => {
+    const response = await api.post(`/health/reports/${reportId}/extract`);
+    return response.data;
+  },
+  confirmVitals: async (vitals: any[]) => {
+    const response = await api.post('/health/vitals/confirm', { vitals });
+    return response.data;
+  },
+};
+
+// Resources / access control
+export const resourcesApi = {
+  list: async () => {
+    console.log('🟢 [API] resourcesApi.list called');
+    const response = await api.get('/resources');
+    console.log('🟢 [API] resourcesApi.list response:', response.data);
+    return response.data;
+  },
+  listClients: async () => {
+    console.log('🟢 [API] resourcesApi.listClients called');
+    const response = await api.get('/resources/clients');
+    console.log('🟢 [API] resourcesApi.listClients response:', response.data);
+    return response.data;
+  },
+  add: async (payload: any) => {
+    console.log('🟢 [API] resourcesApi.add called with payload:', payload);
+    try {
+      const response = await api.post('/resources', payload);
+      console.log('🟢 [API] resourcesApi.add response:', response.data);
+      return response.data;
+    } catch (err: any) {
+      console.error('🟢 [API] resourcesApi.add error:', err);
+      console.error('🟢 [API] Error response:', err.response?.data);
+      throw err;
+    }
   },
 };
 
@@ -307,17 +392,17 @@ export const patientApi = {
 // User API endpoints - NEW
 export const userApi = {
   lookup: async (phone: string) => {
-    const response = await api.post('/users/lookup', { phone });
+    const response = await userApiClient.post('/users/lookup', { phone });
     return response.data;
   },
 
   getByPhone: async (phone: string) => {
-    const response = await api.get(`/users/by-phone/${phone}`);
+    const response = await userApiClient.get(`/users/by-phone/${phone}`);
     return response.data;
   },
 
   searchUsers: async (searchTerm: string) => {
-    const response = await api.get('/users/search', {
+    const response = await userApiClient.get('/users/search', {
       params: { searchTerm }
     });
     return response.data;

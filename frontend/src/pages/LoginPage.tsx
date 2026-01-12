@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { authApi } from '../services/api';
+import { authApi, userApi } from '../services/api';
 import { elegantFirebasePhoneAuth } from '../services/firebasePhoneAuthElegant';
 import { Heart, Shield, Users, Stethoscope, Phone, Eye, EyeOff, ChevronDown, ArrowLeft, CheckCircle, AlertCircle, UserCheck, Building2, ClipboardList, CreditCard } from 'lucide-react';
-import logo from '../assets/logo.jpeg';
 
 // Country code data
 const countryData = [
@@ -17,6 +16,7 @@ const countryData = [
 
 const LoginPage: React.FC = () => {
   const { user, isLoading, login } = useAuth();
+  const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState<'login' | 'register' | 'reset'>('login');
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
@@ -33,7 +33,20 @@ const LoginPage: React.FC = () => {
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [registrationData, setRegistrationData] = useState<any>(null);
+  const [userLookupResult, setUserLookupResult] = useState<{name?: string; roles?: string[]} | null>(null);
+  const [isLookingUpUser, setIsLookingUpUser] = useState(false);
   const countryDropdownRef = useRef<HTMLDivElement>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark') || 'dark';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    document.documentElement.setAttribute('data-theme', theme);
+    // Legacy class support for backward compatibility
+    document.documentElement.classList.remove('theme-dark', 'theme-light');
+    document.documentElement.classList.add(theme === 'light' ? 'theme-light' : 'theme-dark');
+  }, [theme]);
 
   // Close country dropdown when clicking outside
   useEffect(() => {
@@ -59,7 +72,83 @@ const LoginPage: React.FC = () => {
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const formatted = formatPhoneNumber(e.target.value);
     setPhone(formatted);
+    // Clear user lookup result when phone changes
+    setUserLookupResult(null);
   };
+
+  // Lookup user when phone number is 10 digits or more
+  useEffect(() => {
+    const lookupUser = async () => {
+      if (phone.length >= 10 && phone.length === selectedCountry.maxLength) {
+        setIsLookingUpUser(true);
+        try {
+          const fullPhoneNumber = selectedCountry.code + phone;
+          const userData = await userApi.getByPhone(fullPhoneNumber);
+          
+          if (userData && userData.user) {
+            // Extract name and roles from user data
+            const user = userData.user;
+            const rolesSet = new Set<string>();
+
+            // Extract roles from aarogya-mitra privileges if available
+            if (user.privileges && Array.isArray(user.privileges)) {
+              const aarogyaPrivilege = user.privileges.find((p: any) => p.platform === 'aarogya-mitra');
+              if (aarogyaPrivilege && Array.isArray(aarogyaPrivilege.roles)) {
+                aarogyaPrivilege.roles.forEach((r: string) => {
+                  if (r && r.toLowerCase() !== 'guest') rolesSet.add(r);
+                });
+              }
+            }
+
+            // Fallbacks
+            if (user.role && user.role.toLowerCase() !== 'guest') {
+              rolesSet.add(user.role);
+            }
+            if ((user as any).global_role && (user as any).global_role.toLowerCase() !== 'guest') {
+              rolesSet.add((user as any).global_role);
+            }
+            if (rolesSet.size === 0) {
+              rolesSet.add('patient');
+            }
+
+            // Hard overrides for known numbers
+            const fullPhone = (user.phone || fullPhoneNumber || '').replace(/\s+/g, '');
+            if (fullPhone === '+919881255702') {
+              rolesSet.clear();
+              rolesSet.add('Doctor');
+              rolesSet.add('patient');
+            } else if (fullPhone === '+919881255701') {
+              rolesSet.clear();
+              rolesSet.add('patient');
+            }
+
+            setUserLookupResult({
+              name: user.name || user.phone || 'User',
+              roles: Array.from(rolesSet)
+            });
+          } else {
+            setUserLookupResult(null);
+          }
+        } catch (error: any) {
+          // User not found - this is expected for new users
+          if (error.response?.status === 404) {
+            setUserLookupResult(null);
+          } else {
+            console.error('Error looking up user:', error);
+            setUserLookupResult(null);
+          }
+        } finally {
+          setIsLookingUpUser(false);
+        }
+      } else {
+        setUserLookupResult(null);
+      }
+    };
+
+    // Debounce the lookup
+    const timeoutId = setTimeout(lookupUser, 500);
+    return () => clearTimeout(timeoutId);
+  }, [phone, selectedCountry]);
 
   const handleSendOtp = async () => {
     if (!phone) {
@@ -159,6 +248,8 @@ const LoginPage: React.FC = () => {
       if (result.user && result.token) {
         login(result.user, result.token);
         setSuccess('Login successful! Redirecting...');
+        // Go to appointments dashboard after login
+        setTimeout(() => navigate('/appointments'), 300);
       } else {
         throw new Error('Invalid response from server');
       }
@@ -400,63 +491,68 @@ const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-indigo-100 flex items-center justify-center p-4">
+    <div className={`min-h-screen flex items-center justify-center p-4 ${
+      theme === 'light'
+        ? 'bg-gradient-to-b from-[#fef7f0] via-[#fdeee5] to-[#fde8d8]'
+        : 'bg-[#0a0a0f]'
+    }`}>
       <div className="max-w-4xl w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')}
+            className={`px-4 py-2 rounded-full text-sm font-medium border transition ${
+              theme === 'light'
+                ? 'bg-white text-slate-900 border-slate-200 shadow-sm'
+                : 'bg-white/10 text-white border-white/15'
+            }`}
+          >
+            {theme === 'light' ? 'Dark theme' : 'Light theme'}
+          </button>
+        </div>
+        <div className={`grid grid-cols-1 lg:grid-cols-2 gap-8 items-center ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
           {/* Left Side - Branding & Info */}
-          <div className="text-center lg:text-left">
-            <div className="flex justify-center lg:justify-start items-center space-x-3 mb-6">
-              <img src={logo} alt="Aarogya Mitra Logo" className="w-16 h-16 rounded-lg" />
-              <div>
-                <h1 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-green-600 to-red-600">
-                  आरोग्य मित्र
-                </h1>
-                <p className="text-lg text-gray-600">(Health Buddy)</p>
-              </div>
+          <div className="text-center lg:text-left space-y-6">
+            <div className="mb-2">
+              <p className={`text-sm uppercase tracking-[0.15em] ${theme === 'light' ? 'text-rose-600' : 'text-rose-300'}`}>Aarogya Mitra</p>
+              <h2 className={`text-3xl font-bold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>
+                Health · Fitness · Diet
+              </h2>
+              <p className={`text-lg ${theme === 'light' ? 'text-slate-600' : 'text-gray-300'}`}>
+                Secure, modern, mobile-first experience.
+              </p>
             </div>
-            
-            <h2 className="text-3xl font-bold text-gray-800 mb-4">
-              Healthcare Management System
-            </h2>
-            <p className="text-lg text-gray-600 mb-8">
-              Secure, reliable, and comprehensive healthcare management for modern medical practices.
-            </p>
 
             {/* Role Information */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="flex items-center space-x-3 p-4 bg-white rounded-lg shadow-sm">
-                <Shield className="h-8 w-8 text-blue-600" />
-                <div>
-                  <p className="font-semibold text-gray-800">Platform Owner</p>
-                  <p className="text-sm text-gray-600">Full system access</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3 p-4 bg-white rounded-lg shadow-sm">
-                <Users className="h-8 w-8 text-green-600" />
-                <div>
-                  <p className="font-semibold text-gray-800">Clinic Owner</p>
-                  <p className="text-sm text-gray-600">Manage clinic data</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3 p-4 bg-white rounded-lg shadow-sm">
-                <Stethoscope className="h-8 w-8 text-purple-600" />
-                <div>
-                  <p className="font-semibold text-gray-800">Doctor</p>
-                  <p className="text-sm text-gray-600">Patient care & records</p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-3 p-4 bg-white rounded-lg shadow-sm">
-                <Heart className="h-8 w-8 text-orange-600" />
-                <div>
-                  <p className="font-semibold text-gray-800">Patient</p>
-                  <p className="text-sm text-gray-600">View own records</p>
-                </div>
-              </div>
+            <div className="grid grid-cols-1 sm/grid-cols-2 gap-4">
+              {[
+                { icon: Shield, title: 'Platform Owner', desc: 'Full system access', color: 'text-rose-500' },
+                { icon: Users, title: 'Clinic Owner', desc: 'Manage clinics & teams', color: 'text-emerald-500' },
+                { icon: Stethoscope, title: 'Doctor', desc: 'Care & records', color: 'text-indigo-500' },
+                { icon: Heart, title: 'Patient', desc: 'View own records', color: 'text-orange-500' },
+              ].map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div
+                    key={item.title}
+                    className={`flex items-center space-x-3 p-4 rounded-lg shadow-sm ${
+                      theme === 'light'
+                        ? 'bg-white border border-slate-200'
+                        : 'bg-white/5 border border-white/10'
+                    }`}
+                  >
+                    <Icon className={`h-8 w-8 ${item.color}`} />
+                    <div>
+                      <p className={`font-semibold ${theme === 'light' ? 'text-slate-900' : 'text-white'}`}>{item.title}</p>
+                      <p className={`text-sm ${theme === 'light' ? 'text-slate-600' : 'text-gray-300'}`}>{item.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Right Side - Login Form */}
-          <div className="bg-white rounded-2xl shadow-2xl p-8">
+          <div className={`${theme === 'light' ? 'bg-white text-slate-900 border border-slate-200' : 'bg-white/5 backdrop-blur-xl text-white border border-white/10'} rounded-2xl shadow-lg shadow-black/40 p-8`}>
             {/* Step Indicator - Only show for registration and reset */}
             {(currentStep === 'register' || currentStep === 'reset') && (
               <div className="flex items-center justify-center mb-8">
@@ -484,13 +580,15 @@ const LoginPage: React.FC = () => {
             )}
 
             {/* Tab Navigation */}
-            <div className="flex space-x-1 mb-8 bg-gray-100 rounded-lg p-1">
+            <div className={`flex space-x-1 mb-8 rounded-lg p-1 ${
+              theme === 'light' ? 'bg-slate-100' : 'bg-white/10 border border-white/15'
+            }`}>
               <button
                 onClick={() => handleStepChange('login')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   currentStep === 'login' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-800'
+                    ? theme === 'light' ? 'bg-white text-rose-700 shadow-sm' : 'bg-white/15 text-white border border-white/10'
+                    : theme === 'light' ? 'text-slate-600 hover:text-slate-800' : 'text-gray-300 hover:text-white'
                 }`}
               >
                 Login
@@ -499,8 +597,8 @@ const LoginPage: React.FC = () => {
                 onClick={() => handleStepChange('register')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   currentStep === 'register' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-800'
+                    ? theme === 'light' ? 'bg-white text-rose-700 shadow-sm' : 'bg-white/15 text-white border border-white/10'
+                    : theme === 'light' ? 'text-slate-600 hover:text-slate-800' : 'text-gray-300 hover:text-white'
                 }`}
               >
                 Register
@@ -509,8 +607,8 @@ const LoginPage: React.FC = () => {
                 onClick={() => handleStepChange('reset')}
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
                   currentStep === 'reset' 
-                    ? 'bg-white text-blue-600 shadow-sm' 
-                    : 'text-gray-600 hover:text-gray-800'
+                    ? theme === 'light' ? 'bg-white text-rose-700 shadow-sm' : 'bg-white/15 text-white border border-white/10'
+                    : theme === 'light' ? 'text-slate-600 hover:text-slate-800' : 'text-gray-300 hover:text-white'
                 }`}
               >
                 Reset PIN
@@ -536,7 +634,7 @@ const LoginPage: React.FC = () => {
             {!otpSent && (
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className={`block text-sm font-medium mb-2 ${theme === 'light' ? 'text-slate-700' : 'text-gray-200'}`}>
                     Phone Number
                   </label>
                   <div className="flex space-x-2">
@@ -545,15 +643,23 @@ const LoginPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => setIsCountryDropdownOpen(!isCountryDropdownOpen)}
-                        className="flex items-center space-x-2 px-3 py-3 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`flex items-center space-x-2 px-3 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 ${
+                          theme === 'light'
+                            ? 'bg-white border border-slate-200 text-slate-900 hover:bg-slate-50'
+                            : 'bg-white/10 border border-white/20 text-white hover:bg-white/15'
+                        }`}
                       >
                         <span className="text-lg">{selectedCountry.flag}</span>
                         <span className="text-sm font-medium">{selectedCountry.code}</span>
-                        <ChevronDown className="w-4 h-4" />
+                        <ChevronDown className={`w-4 h-4 ${theme === 'light' ? 'text-slate-800' : 'text-gray-200'}`} />
                       </button>
                       
                       {isCountryDropdownOpen && (
-                        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+                        <div className={`absolute top-full left-0 mt-1 w-64 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto ${
+                          theme === 'light'
+                            ? 'bg-white border border-slate-200'
+                            : 'bg-white/5 border border-white/10 text-white'
+                        }`}>
                           {countryData.map((country) => (
                             <button
                               key={country.code}
@@ -561,12 +667,16 @@ const LoginPage: React.FC = () => {
                                 setSelectedCountry(country);
                                 setIsCountryDropdownOpen(false);
                               }}
-                              className="w-full flex items-center space-x-3 px-4 py-2 hover:bg-gray-50 text-left"
+                              className={`w-full flex items-center space-x-3 px-4 py-2 text-left ${
+                                theme === 'light'
+                                  ? 'hover:bg-slate-50 text-slate-900'
+                                  : 'hover:bg-white/10 text-white'
+                              }`}
                             >
                               <span className="text-lg">{country.flag}</span>
                               <div>
                                 <div className="font-medium">{country.country}</div>
-                                <div className="text-sm text-gray-500">{country.code}</div>
+                                <div className={theme === 'light' ? 'text-sm text-slate-600' : 'text-sm text-gray-300'}>{country.code}</div>
                               </div>
                             </button>
                           ))}
@@ -575,23 +685,47 @@ const LoginPage: React.FC = () => {
                     </div>
 
                     {/* Phone Input */}
-                    <div className="flex-1">
+                  <div className="flex-1">
                       <input
                         type="tel"
                         value={phone}
                         onChange={handlePhoneChange}
                         placeholder={selectedCountry.format}
                         maxLength={selectedCountry.maxLength}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className={`w-full px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent ${
+                        theme === 'light'
+                          ? 'bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400'
+                          : 'bg-white/10 border border-white/20 text-white placeholder:text-gray-200'
+                      }`}
                       />
                     </div>
                   </div>
+                  
+                  {/* User Lookup Result */}
+                  {phone.length >= 10 && (
+                    <div className="mt-2">
+                      {isLookingUpUser ? (
+                        <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-300'}`}>Searching...</p>
+                      ) : userLookupResult ? (
+                        <div className={`text-xs space-y-1 ${theme === 'light' ? 'text-slate-700' : 'text-gray-200'}`}>
+                          <p className="font-semibold">Name: {userLookupResult.name}</p>
+                          {userLookupResult.roles && userLookupResult.roles.length > 0 && (
+                            <p className={`${theme === 'light' ? 'text-rose-700' : 'text-rose-200'} font-semibold`}>
+                              Role(s): {userLookupResult.roles.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                      ) : phone.length === selectedCountry.maxLength ? (
+                        <p className="text-xs text-red-600">Pl. register yourself</p>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 {/* PIN Input for Login */}
                 {currentStep === 'login' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className={`block text-sm font-medium mb-2 ${theme === 'light' ? 'text-slate-700' : 'text-gray-200'}`}>
                       PIN
                     </label>
                     <div className="relative">
@@ -601,12 +735,19 @@ const LoginPage: React.FC = () => {
                         onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         placeholder="Enter your PIN"
                         maxLength={6}
-                        className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        inputMode="numeric"
+                        className={`w-full px-4 py-3 pr-12 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent ${
+                          theme === 'light'
+                            ? 'bg-white border border-slate-200 text-slate-900 placeholder:text-slate-400'
+                            : 'bg-white/10 border border-white/20 text-white placeholder:text-gray-200'
+                        }`}
                       />
                       <button
                         type="button"
                         onClick={() => setShowPin(!showPin)}
-                        className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        className={`absolute right-3 top-1/2 transform -translate-y-1/2 ${
+                          theme === 'light' ? 'text-slate-500 hover:text-slate-700' : 'text-gray-300 hover:text-white'
+                        }`}
                       >
                         {showPin ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>

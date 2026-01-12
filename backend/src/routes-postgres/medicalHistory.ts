@@ -1,5 +1,5 @@
 import express from 'express';
-import { authenticate } from '../middleware/auth-postgres';
+import { authenticate } from '../middleware/auth';
 import {
   getMedicalHistory,
   getAllPrescriptions,
