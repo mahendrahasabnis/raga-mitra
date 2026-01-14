@@ -1,70 +1,436 @@
 import { Request, Response } from 'express';
-import { QueryTypes, Sequelize } from 'sequelize';
 import { v4 as uuidv4 } from 'uuid';
-import bcrypt from 'bcryptjs';
-
-const inMemoryResources: any[] = [];
-
-// Create plain Sequelize instances directly (bypass sequelize-typescript model validation)
-// We use raw SQL queries, so we don't need the ORM models
-const getSharedSequelize = async () => {
-  return new Sequelize({
-    database: process.env.SHARED_DB_NAME || process.env.DB_NAME || 'platforms_99',
-    username: process.env.SHARED_DB_USER || process.env.DB_USER || 'app_user',
-    password: process.env.SHARED_DB_PASSWORD || process.env.DB_PASSWORD || 'app_password_2024',
-    host: process.env.SHARED_DB_HOST || process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.SHARED_DB_PORT || process.env.DB_PORT || '5432'),
-    dialect: 'postgres',
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    },
-    dialectOptions: process.env.DB_SSL === 'true' ? {
-      ssl: { require: true, rejectUnauthorized: false }
-    } : undefined
-  } as any);
-};
+import { QueryTypes } from 'sequelize';
+import bcrypt from 'bcrypt';
 
 const getAppSequelize = async () => {
-  return new Sequelize({
-    database: process.env.DB_NAME || 'aarogya_mitra',
-    username: process.env.DB_USER || 'app_user',
-    password: process.env.DB_PASSWORD || 'app_password_2024',
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    dialect: 'postgres',
-    logging: process.env.NODE_ENV === 'development' ? console.log : false,
-    pool: {
-      max: 5,
-      min: 0,
-      acquire: 30000,
-      idle: 10000
-    },
-    dialectOptions: process.env.DB_SSL === 'true' ? {
-      ssl: { require: true, rejectUnauthorized: false }
-    } : undefined
-  } as any);
+  const { Sequelize } = await import('sequelize');
+  return new Sequelize(
+    process.env.DB_NAME || 'aarogya_mitra',
+    process.env.DB_USER || 'app_user',
+    process.env.DB_PASSWORD || 'app_password_2024',
+    {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      dialect: 'postgres',
+      logging: false,
+    }
+  );
 };
 
-let patientResourcesEnsured = false;
-const ensurePatientResourcesTable = async () => {
-  if (patientResourcesEnsured) {
-    console.log('🔵 [RESOURCES] Table already ensured, skipping');
-    return;
-  }
+const getSharedSequelize = async () => {
+  const { Sequelize } = await import('sequelize');
+  return new Sequelize(
+    process.env.SHARED_DB_NAME || 'platforms_99',
+    process.env.SHARED_DB_USER || process.env.DB_USER || 'postgres',
+    process.env.SHARED_DB_PASSWORD || process.env.DB_PASSWORD || '',
+    {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      dialect: 'postgres',
+      logging: false,
+    }
+  );
+};
+
+export const listResources = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const userPhone = req.user?.phone;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
   try {
-    console.log('🔵 [RESOURCES] Ensuring patient_resources table exists...');
-    const appDb = await getAppSequelize();
-    console.log('🔵 [RESOURCES] App DB connection obtained');
-    await appDb.query(`
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+
+    console.log(`🔍 [RESOURCES] listResources: userId=${userId}, userPhone=${userPhone}, user object:`, JSON.stringify(req.user, null, 2));
+    
+    // First, let's check if we can find the user by phone in the shared DB to get their actual user ID
+    const sharedSequelize = await getSharedSequelize();
+    const usersByPhone: any = await sharedSequelize.query(
+      `SELECT id, phone, name FROM users WHERE phone = :phone LIMIT 1`,
+      { replacements: { phone: userPhone }, type: QueryTypes.SELECT }
+    );
+    
+    const actualUserId = Array.isArray(usersByPhone) && usersByPhone.length > 0 ? usersByPhone[0].id : userId;
+    console.log(`🔍 [RESOURCES] listResources: actualUserId from DB=${actualUserId}, userId from token=${userId}`);
+    
+    // Also check what patient_user_id values exist in patient_resources for debugging
+    const allResources: any = await sequelize.query(
+      `SELECT patient_user_id, resource_name, resource_phone, COUNT(*) as count 
+       FROM patient_resources 
+       GROUP BY patient_user_id, resource_name, resource_phone 
+       LIMIT 10`,
+      { type: QueryTypes.SELECT }
+    );
+    console.log(`🔍 [RESOURCES] Sample patient_user_id values in DB:`, JSON.stringify(allResources, null, 2));
+    
+    const resources: any = await sequelize.query(
+      `SELECT * FROM patient_resources WHERE patient_user_id = :userId ORDER BY created_at DESC`,
+      { replacements: { userId: actualUserId }, type: QueryTypes.SELECT }
+    );
+
+    const resourcesArray = Array.isArray(resources) ? resources : [];
+    console.log(`✅ [RESOURCES] listResources: Found ${resourcesArray.length} resources for userId=${actualUserId}`);
+    if (resourcesArray.length > 0) {
+      console.log(`✅ [RESOURCES] Resources found:`, JSON.stringify(resourcesArray.map((r: any) => ({ id: r.id, resource_name: r.resource_name, resource_phone: r.resource_phone })), null, 2));
+    }
+    
+    return res.json({ resources: resourcesArray });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] listResources error:', err.message || err);
+    console.error('❌ [RESOURCES] Stack:', err.stack);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const addResource = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const { name, phone, roles } = req.body || {};
+    // Support both single role (backward compatibility) and roles array
+    const rolesArray = Array.isArray(roles) ? roles : (roles ? [roles] : (req.body?.role ? [req.body.role] : []));
+
+    if (!name || !phone || rolesArray.length === 0) {
+      return res.status(400).json({ message: 'name, phone, and at least one role are required' });
+    }
+
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+
+    const sharedSequelize = await getSharedSequelize();
+
+    // Normalize phone (ensure it starts with +)
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+    // Check if user exists in platforms_99.users, create if doesn't exist
+    const existingUsers: any = await sharedSequelize.query(
+      `SELECT id, name FROM users WHERE phone = :phone LIMIT 1`,
+      { replacements: { phone: normalizedPhone }, type: QueryTypes.SELECT }
+    );
+
+    let resourceUserId: string;
+    if (existingUsers && Array.isArray(existingUsers) && existingUsers.length > 0) {
+      // User exists, use their ID
+      resourceUserId = existingUsers[0].id;
+      console.log(`✅ [RESOURCES] Using existing user ${resourceUserId} for phone ${normalizedPhone}`);
+    } else {
+      // User doesn't exist, create them
+      const newUserId = uuidv4();
+      const pinHash = await bcrypt.hash('1234', 10); // Default PIN
+
+      try {
+        await sharedSequelize.query(
+          `INSERT INTO users (id, phone, name, pin_hash, created_at, updated_at)
+           VALUES (:id, :phone, :name, :pinHash, NOW(), NOW())`,
+          {
+            replacements: {
+              id: newUserId,
+              phone: normalizedPhone,
+              name,
+              pinHash,
+            },
+            type: QueryTypes.INSERT,
+          }
+        );
+        resourceUserId = newUserId;
+        console.log(`✅ [RESOURCES] Created new user ${resourceUserId} for phone ${normalizedPhone}`);
+      } catch (insertErr: any) {
+        // If user already exists (race condition or unique constraint violation), fetch the existing user
+        if (insertErr.message?.includes('unique') || insertErr.name === 'SequelizeUniqueConstraintError' || insertErr.code === '23505') {
+          console.log(`⚠️ [RESOURCES] User creation failed (already exists), fetching existing user for phone ${normalizedPhone}`);
+          const retryUsers: any = await sharedSequelize.query(
+            `SELECT id, name FROM users WHERE phone = :phone LIMIT 1`,
+            { replacements: { phone: normalizedPhone }, type: QueryTypes.SELECT }
+          );
+          if (retryUsers && Array.isArray(retryUsers) && retryUsers.length > 0) {
+            resourceUserId = retryUsers[0].id;
+            console.log(`✅ [RESOURCES] Using existing user ${resourceUserId} for phone ${normalizedPhone} (after retry)`);
+          } else {
+            throw insertErr;
+          }
+        } else {
+          throw insertErr;
+        }
+      }
+    }
+
+    // Add/update roles in platform_privileges for aarogya-mitra platform
+    const platformName = 'aarogya-mitra';
+    const existingPrivileges: any = await sharedSequelize.query(
+      `SELECT id, roles FROM platform_privileges WHERE user_id = :userId AND platform_name = :platformName LIMIT 1`,
+      {
+        replacements: { userId: resourceUserId, platformName },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    if (existingPrivileges && Array.isArray(existingPrivileges) && existingPrivileges.length > 0) {
+      // Update existing privilege - merge roles
+      const existingRoles = existingPrivileges[0].roles || [];
+      // Handle both array and JSON string formats
+      const existingRolesArray = Array.isArray(existingRoles) 
+        ? existingRoles 
+        : (typeof existingRoles === 'string' ? JSON.parse(existingRoles) : []);
+      const mergedRoles = Array.from(new Set([...existingRolesArray, ...rolesArray]));
+      // Format as PostgreSQL array literal: '{value1,value2}'
+      const arrayLiteral = `{${mergedRoles.map(r => `"${r}"`).join(',')}}`;
+      await sharedSequelize.query(
+        `UPDATE platform_privileges SET roles = :roles::text[], updated_at = NOW() WHERE id = :id`,
+        {
+          replacements: {
+            id: existingPrivileges[0].id,
+            roles: arrayLiteral,
+          },
+          type: QueryTypes.UPDATE,
+        }
+      );
+      console.log(`✅ [RESOURCES] Updated platform_privileges with roles: ${mergedRoles.join(', ')}`);
+    } else {
+      // Create new privilege
+      // Format as PostgreSQL array literal: '{value1,value2}'
+      const arrayLiteral = `{${rolesArray.map(r => `"${r}"`).join(',')}}`;
+      await sharedSequelize.query(
+        `INSERT INTO platform_privileges (user_id, platform_name, roles, permissions, is_active, created_at, updated_at)
+         VALUES (:userId, :platformName, :roles::text[], :permissions::jsonb, TRUE, NOW(), NOW())`,
+        {
+          replacements: {
+            userId: resourceUserId,
+            platformName,
+            roles: arrayLiteral,
+            permissions: JSON.stringify([]),
+          },
+          type: QueryTypes.INSERT,
+        }
+      );
+      console.log(`✅ [RESOURCES] Created platform_privileges with roles: ${rolesArray.join(', ')}`);
+    }
+
+    // Upsert in patient_resources (store roles as JSONB)
+    await sequelize.query(
+      `INSERT INTO patient_resources (id, patient_user_id, resource_user_id, roles, resource_name, resource_phone, access_health, access_fitness, access_diet, created_at, updated_at)
+       VALUES (:id, :patientUserId, :resourceUserId, :roles, :resourceName, :resourcePhone, TRUE, TRUE, TRUE, NOW(), NOW())
+       ON CONFLICT (patient_user_id, resource_user_id) DO UPDATE SET
+         roles = EXCLUDED.roles,
+         resource_name = EXCLUDED.resource_name,
+         resource_phone = EXCLUDED.resource_phone,
+         updated_at = NOW()`,
+      {
+        replacements: {
+          id: uuidv4(),
+          patientUserId: userId,
+          resourceUserId,
+          roles: JSON.stringify(rolesArray),
+          resourceName: name,
+          resourcePhone: normalizedPhone,
+        },
+        type: QueryTypes.INSERT,
+      }
+    );
+
+    const resources: any = await sequelize.query(
+      `SELECT * FROM patient_resources WHERE patient_user_id = :userId ORDER BY created_at DESC`,
+      { replacements: { userId }, type: QueryTypes.SELECT }
+    );
+
+    return res.json({ resources: Array.isArray(resources) ? resources : [] });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] addResource error:', err.message || err);
+    console.error('❌ [RESOURCES] Error name:', err.name);
+    console.error('❌ [RESOURCES] Error code:', err.code);
+    console.error('❌ [RESOURCES] Error detail:', err.detail);
+    console.error('❌ [RESOURCES] Error errors:', err.errors);
+    console.error('❌ [RESOURCES] Error original:', err.original);
+    console.error('❌ [RESOURCES] Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+    console.error('❌ [RESOURCES] Stack:', err.stack);
+    const errorMessage = err.message || err.detail || err.errors?.[0]?.message || err.original?.message || 'Internal server error';
+    return res.status(500).json({ message: errorMessage, details: err.detail || err.errors || err.original });
+  }
+};
+
+export const updateResourceAccess = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const { id } = req.params;
+    const { access_health, access_fitness, access_diet, roles } = req.body || {};
+
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+
+    const updates: string[] = [];
+    const params: any = { id, userId };
+
+    if (access_health !== undefined) {
+      updates.push('access_health = :accessHealth');
+      params.accessHealth = access_health;
+    }
+    if (access_fitness !== undefined) {
+      updates.push('access_fitness = :accessFitness');
+      params.accessFitness = access_fitness;
+    }
+    if (access_diet !== undefined) {
+      updates.push('access_diet = :accessDiet');
+      params.accessDiet = access_diet;
+    }
+    if (roles !== undefined && Array.isArray(roles)) {
+      updates.push('roles = :roles::jsonb');
+      params.roles = JSON.stringify(roles);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'No updates provided' });
+    }
+
+    updates.push('updated_at = NOW()');
+
+    const sql = `UPDATE patient_resources SET ${updates.join(', ')} WHERE id = :id AND patient_user_id = :userId RETURNING *`;
+    const result: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+
+    const rows = Array.isArray(result) && result.length === 2 ? result[0] : result;
+    const updatedResource = Array.isArray(rows) ? rows[0] : rows;
+
+    if (!updatedResource) {
+      return res.status(404).json({ message: 'Resource not found' });
+    }
+
+    // If roles were updated, also update platform_privileges
+    if (roles !== undefined && Array.isArray(roles)) {
+      const sharedSequelize = await getSharedSequelize();
+      const resourceRows: any = await sequelize.query(
+        `SELECT resource_user_id FROM patient_resources WHERE id = :id LIMIT 1`,
+        { replacements: { id }, type: QueryTypes.SELECT }
+      );
+      if (resourceRows && Array.isArray(resourceRows) && resourceRows.length > 0) {
+        const resourceUserId = resourceRows[0].resource_user_id;
+        const platformName = 'aarogya-mitra';
+        const existingPrivileges: any = await sharedSequelize.query(
+          `SELECT id, roles FROM platform_privileges WHERE user_id = :userId AND platform_name = :platformName LIMIT 1`,
+          {
+            replacements: { userId: resourceUserId, platformName },
+            type: QueryTypes.SELECT,
+          }
+        );
+        if (existingPrivileges && Array.isArray(existingPrivileges) && existingPrivileges.length > 0) {
+          // Format as PostgreSQL array literal: '{value1,value2}'
+          const arrayLiteral = `{${roles.map(r => `"${r}"`).join(',')}}`;
+          await sharedSequelize.query(
+            `UPDATE platform_privileges SET roles = :roles::text[], updated_at = NOW() WHERE id = :id`,
+            {
+              replacements: {
+                id: existingPrivileges[0].id,
+                roles: arrayLiteral,
+              },
+              type: QueryTypes.UPDATE,
+            }
+          );
+        }
+      }
+    }
+
+    return res.json({ resource: updatedResource });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] updateResourceAccess error:', err.message || err);
+    console.error('❌ [RESOURCES] Stack:', err.stack);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const deleteResource = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const { id } = req.params;
+
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+
+    const result: any = await sequelize.query(
+      `DELETE FROM patient_resources WHERE id = :id AND patient_user_id = :userId RETURNING *`,
+      { replacements: { id, userId }, type: QueryTypes.DELETE }
+    );
+
+    const rows = Array.isArray(result) && result.length === 2 ? result[0] : result;
+    const deletedResource = Array.isArray(rows) ? rows[0] : rows;
+
+    if (!deletedResource) {
+      return res.status(404).json({ message: 'Resource not found' });
+    }
+
+    return res.json({ message: 'Resource deleted successfully' });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] deleteResource error:', err.message || err);
+    console.error('❌ [RESOURCES] Stack:', err.stack);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const listClients = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+
+    const sharedSequelize = await getSharedSequelize();
+
+    // Get all patients who have added this user as a resource
+    const rows: any = await sequelize.query(
+      `SELECT DISTINCT patient_user_id
+       FROM patient_resources
+       WHERE resource_user_id = :userId`,
+      {
+        replacements: { userId },
+        type: QueryTypes.SELECT,
+      }
+    );
+
+    // Fetch patient names and phones from shared DB
+    const clients = [];
+    const rowsArray = Array.isArray(rows) ? rows : [];
+    for (const row of rowsArray) {
+      if (!row || !row.patient_user_id) continue;
+      
+      const patientUsers: any = await sharedSequelize.query(
+        `SELECT id, name, phone FROM users WHERE id = :patientUserId LIMIT 1`,
+        {
+          replacements: { patientUserId: row.patient_user_id },
+          type: QueryTypes.SELECT,
+        }
+      );
+
+      const patient = Array.isArray(patientUsers) && patientUsers.length > 0 ? patientUsers[0] : null;
+      if (patient) {
+        clients.push({
+          id: patient.id,
+          name: patient.name || 'Unknown',
+          phone: patient.phone || 'Unknown',
+        });
+      }
+    }
+
+    return res.json({ clients: clients || [] });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] listClients error:', err.message || err);
+    console.error('❌ [RESOURCES] listClients stack:', err.stack);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+async function ensurePatientResourcesTable() {
+  try {
+    const sequelize = await getAppSequelize();
+    await sequelize.query(`
       CREATE TABLE IF NOT EXISTS patient_resources (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         patient_user_id UUID NOT NULL,
         resource_user_id UUID NOT NULL,
-        role VARCHAR(64) NOT NULL,
+        role VARCHAR(64),
+        roles JSONB DEFAULT '[]'::jsonb NOT NULL,
         access_health BOOLEAN DEFAULT TRUE,
         access_fitness BOOLEAN DEFAULT TRUE,
         access_diet BOOLEAN DEFAULT TRUE,
@@ -79,281 +445,22 @@ const ensurePatientResourcesTable = async () => {
       CREATE INDEX IF NOT EXISTS idx_resource_user_id ON patient_resources (resource_user_id);
       CREATE INDEX IF NOT EXISTS idx_resource_phone ON patient_resources (resource_phone);
     `);
-    patientResourcesEnsured = true;
-    console.log('✅ [RESOURCES] patient_resources table ensured');
+    // Migration: Make role nullable and add roles column if it doesn't exist
+    await sequelize.query(`
+      DO $$ 
+      BEGIN
+        -- Make role nullable (for existing tables)
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patient_resources' AND column_name = 'role' AND is_nullable = 'NO') THEN
+          ALTER TABLE patient_resources ALTER COLUMN role DROP NOT NULL;
+        END IF;
+        -- Add roles column if it doesn't exist (for existing tables)
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'patient_resources' AND column_name = 'roles') THEN
+          ALTER TABLE patient_resources ADD COLUMN roles JSONB DEFAULT '[]'::jsonb NOT NULL;
+        END IF;
+      END $$;
+    `);
   } catch (err: any) {
-    console.error('❌ [RESOURCES] ensurePatientResourcesTable failed:', err.message || err);
-    console.error('❌ [RESOURCES] Error stack:', err.stack);
+    console.error('⚠️ [RESOURCES] Failed to ensure table (non-fatal):', err.message || err);
+    // Don't throw - table might already exist or be created by migration
   }
-};
-
-export const listResources = async (req: any, res: Response) => {
-  console.log('🔵 [RESOURCES] listResources called');
-  const patientId = req.user?.id;
-  console.log('🔵 [RESOURCES] patientId:', patientId);
-  if (!patientId) {
-    console.error('❌ [RESOURCES] No patientId, returning 401');
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  try {
-    await ensurePatientResourcesTable();
-    const sequelize = await getAppSequelize();
-    console.log('🔵 [RESOURCES] Querying patient_resources for patient:', patientId);
-    const queryResult: any = await sequelize.query(
-      `SELECT pr.id,
-              pr.role,
-              pr.access_health,
-              pr.access_fitness,
-              pr.access_diet,
-              pr.resource_user_id,
-              pr.resource_phone,
-              pr.resource_name
-         FROM patient_resources pr
-        WHERE pr.patient_user_id = :patient`,
-      { replacements: { patient: patientId }, type: QueryTypes.SELECT }
-    );
-    // Sequelize.query with QueryTypes.SELECT returns [rows, metadata]
-    // But when using plain Sequelize (not sequelize-typescript), it might return just rows
-    const rows = Array.isArray(queryResult) && queryResult.length === 2 ? queryResult[0] : queryResult;
-    // Ensure it's always an array
-    const resourcesArray = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-    console.log('✅ [RESOURCES] Found', resourcesArray.length, 'resources');
-    console.log('🔵 [RESOURCES] Resources:', JSON.stringify(resourcesArray, null, 2));
-    return res.json({ resources: resourcesArray });
-  } catch (err: any) {
-    console.error('❌ [RESOURCES] listResources error:', err.message || err);
-    console.error('❌ [RESOURCES] Error stack:', err.stack);
-    const rows = inMemoryResources.filter((r) => r.patient_user_id === patientId);
-    console.log('🔵 [RESOURCES] Falling back to in-memory resources:', rows.length);
-    return res.json({ resources: rows, warning: 'DB unavailable, using in-memory data' });
-  }
-};
-
-// List patients who added the current user as a resource (for doctor/trainer/dietitian views)
-export const listClients = async (req: any, res: Response) => {
-  const resourceId = req.user?.id;
-  const resourcePhone = req.user?.phone;
-  console.log('🔵 [RESOURCES] listClients called');
-  console.log('🔵 [RESOURCES] resourceId (logged-in user ID):', resourceId);
-  console.log('🔵 [RESOURCES] resourcePhone (logged-in user phone):', resourcePhone);
-  if (!resourceId) return res.status(401).json({ message: 'Unauthorized' });
-  try {
-    await ensurePatientResourcesTable();
-    const appDb = await getAppSequelize();
-    const sharedDb = await getSharedSequelize();
-    
-    console.log('🔵 [RESOURCES] Querying patient_resources for resource:', resourceId, resourcePhone);
-    // First, get the patient_resources rows
-    const queryResult: any = await appDb.query(
-      `SELECT pr.id,
-              pr.role,
-              pr.patient_user_id,
-              pr.resource_user_id
-         FROM patient_resources pr
-        WHERE pr.resource_user_id = :resource
-           OR (:rphone IS NOT NULL AND pr.resource_phone = :rphone)`,
-      { replacements: { resource: resourceId, rphone: resourcePhone || null }, type: QueryTypes.SELECT }
-    );
-    console.log('🔵 [RESOURCES] Raw query result:', JSON.stringify(queryResult, null, 2));
-    const rows = Array.isArray(queryResult) && queryResult.length === 2 ? queryResult[0] : queryResult;
-    const patientResources = Array.isArray(rows) ? rows : (rows ? [rows] : []);
-    console.log('🔵 [RESOURCES] Found', patientResources.length, 'patient_resources rows');
-    
-    // Now fetch patient names and phones from users table
-    const clientsArray: any[] = [];
-    for (const pr of patientResources) {
-      if (!pr.patient_user_id) continue;
-      try {
-        const [userRows]: any = await sharedDb.query(
-          `SELECT id, phone, name FROM users WHERE id = :userId`,
-          { replacements: { userId: pr.patient_user_id }, type: QueryTypes.SELECT }
-        );
-        const userData = Array.isArray(userRows) ? userRows[0] : userRows;
-        if (userData) {
-          clientsArray.push({
-            id: pr.id,
-            name: userData.name || '',
-            phone: userData.phone || '',
-            role: pr.role,
-            patient_user_id: pr.patient_user_id
-          });
-        } else {
-          // If user not found, still include with empty name/phone
-          clientsArray.push({
-            id: pr.id,
-            name: '',
-            phone: '',
-            role: pr.role,
-            patient_user_id: pr.patient_user_id
-          });
-        }
-      } catch (err: any) {
-        console.warn('⚠️ [RESOURCES] Failed to fetch user data for patient_user_id:', pr.patient_user_id, err.message);
-        // Still include the row with empty name/phone
-        clientsArray.push({
-          id: pr.id,
-          name: '',
-          phone: '',
-          role: pr.role,
-          patient_user_id: pr.patient_user_id
-        });
-      }
-    }
-    
-    console.log('✅ [RESOURCES] Found', clientsArray.length, 'clients');
-    console.log('🔵 [RESOURCES] Clients array:', JSON.stringify(clientsArray, null, 2));
-    return res.json({ clients: clientsArray });
-  } catch (err: any) {
-    console.error('❌ [RESOURCES] listClients app query failed:', err.message || err);
-    console.error('❌ [RESOURCES] Error stack:', err.stack);
-    return res.json({ clients: [] });
-  }
-};
-
-export const addResource = async (req: any, res: Response) => {
-  console.log('🔵 [RESOURCES] addResource called');
-  console.log('🔵 [RESOURCES] req.user:', JSON.stringify(req.user, null, 2));
-  const patientId = req.user?.id;
-  console.log('🔵 [RESOURCES] patientId:', patientId);
-  if (!patientId) {
-    console.error('❌ [RESOURCES] No patientId, returning 401');
-    return res.status(401).json({ message: 'Unauthorized' });
-  }
-  const { name, phone, role, access_health = true, access_fitness = true, access_diet = true } = req.body || {};
-  console.log('🔵 [RESOURCES] Request body:', { name, phone, role, access_health, access_fitness, access_diet });
-  if (!phone || !role) {
-    console.error('❌ [RESOURCES] Missing phone or role');
-    return res.status(400).json({ message: 'phone and role are required' });
-  }
-
-  try {
-    console.log('🔵 [RESOURCES] Ensuring patient_resources table exists...');
-    await ensurePatientResourcesTable();
-    console.log('🔵 [RESOURCES] Getting database connections...');
-    const shared = await getSharedSequelize();
-    const appDb = await getAppSequelize();
-    console.log('🔵 [RESOURCES] Database connections obtained');
-    const userId = uuidv4();
-    console.log('🔵 [RESOURCES] Generated userId:', userId);
-
-    // Upsert user by phone
-    console.log('🔵 [RESOURCES] Upserting user in shared DB (platforms_99.users)...');
-    // Don't set global_role - let it use the default 'user' or NULL
-    // The actual role (Doctor/FitnessTrainer/Dietitian) goes into platform_privileges
-    // Generate a placeholder pin_hash for new users (they'll set a real PIN when they register)
-    const placeholderPinHash = await bcrypt.hash('TEMP_PLACEHOLDER_' + phone, 10);
-    const userReplacements = { id: userId, phone, name: name || phone, pinHash: placeholderPinHash };
-    console.log('🔵 [RESOURCES] User replacements:', { id: userId, phone, name: name || phone });
-    const [userRows]: any = await shared.query(
-      `INSERT INTO users (id, phone, name, pin_hash, is_active)
-       VALUES (:id, :phone, :name, :pinHash, true)
-       ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      { replacements: userReplacements, type: QueryTypes.INSERT }
-    );
-    console.log('🔵 [RESOURCES] User upsert result:', JSON.stringify(userRows, null, 2));
-    const createdUserId = (Array.isArray(userRows) ? userRows[0]?.id : userRows?.id) || userId;
-    console.log('🔵 [RESOURCES] Created/resolved userId:', createdUserId);
-
-    // Upsert platform privilege (best-effort)
-    try {
-      await shared.query(
-        `INSERT INTO platform_privileges (id, user_id, platform_name, roles, permissions, is_active)
-         VALUES (:id, :user_id, :platform, ARRAY[:role], ARRAY[]::varchar[], true)
-         ON CONFLICT (user_id, platform_name)
-         DO UPDATE SET roles = EXCLUDED.roles, permissions = EXCLUDED.permissions, is_active = true`,
-        { replacements: { id: uuidv4(), user_id: createdUserId, platform: 'aarogya-mitra', role }, type: QueryTypes.INSERT }
-      );
-    } catch (err: any) {
-      console.warn('⚠️ [RESOURCES] platform_privileges upsert failed (continuing):', err.message || err);
-    }
-
-    // Insert link into aarogya_mitra.patient_resources
-    const linkId = uuidv4();
-    console.log('🔵 [RESOURCES] Generated linkId:', linkId);
-    const baseInsert = `INSERT INTO patient_resources (id, patient_user_id, resource_user_id, role, access_health, access_fitness, access_diet, resource_phone, resource_name)
-                        VALUES (:id, :patient, :resource, :role, :ahealth, :afit, :adiet, :rphone, :rname)
-                        ON CONFLICT (patient_user_id, resource_user_id)
-                        DO UPDATE SET role = EXCLUDED.role, access_health = EXCLUDED.access_health, access_fitness = EXCLUDED.access_fitness, access_diet = EXCLUDED.access_diet, resource_phone = EXCLUDED.resource_phone, resource_name = EXCLUDED.resource_name
-                        RETURNING *`;
-    let linkRows: any;
-    const linkReplacements = {
-      id: linkId,
-      patient: patientId,
-      resource: createdUserId,
-      role,
-      ahealth: access_health,
-      afit: access_fitness,
-      adiet: access_diet,
-      rphone: phone,
-      rname: name || phone,
-    };
-    console.log('🔵 [RESOURCES] Attempting to insert into aarogya_mitra.patient_resources...');
-    console.log('🔵 [RESOURCES] Link replacements:', JSON.stringify(linkReplacements, null, 2));
-    console.log('🔵 [RESOURCES] SQL:', baseInsert);
-    try {
-      const [rows]: any = await appDb.query(baseInsert, {
-        replacements: linkReplacements,
-        type: QueryTypes.INSERT
-      });
-      console.log('✅ [RESOURCES] patient_resources insert successful');
-      console.log('🔵 [RESOURCES] Insert result:', JSON.stringify(rows, null, 2));
-      linkRows = rows;
-    } catch (err: any) {
-      console.error('❌ [RESOURCES] patient_resources insert failed in app DB:', err.message || err);
-      console.error('❌ [RESOURCES] Error stack:', err.stack);
-      // Fallback minimal insert without phone/name
-      const [rows]: any = await appDb.query(
-        `INSERT INTO patient_resources (id, patient_user_id, resource_user_id, role, access_health, access_fitness, access_diet)
-         VALUES (:id, :patient, :resource, :role, :ahealth, :afit, :adiet)
-         ON CONFLICT (patient_user_id, resource_user_id)
-         DO UPDATE SET role = EXCLUDED.role, access_health = EXCLUDED.access_health, access_fitness = EXCLUDED.access_fitness, access_diet = EXCLUDED.access_diet
-         RETURNING *`,
-        {
-          replacements: {
-            id: linkId,
-            patient: patientId,
-            resource: createdUserId,
-            role,
-            ahealth: access_health,
-            afit: access_fitness,
-            adiet: access_diet,
-          },
-          type: QueryTypes.INSERT
-        }
-      );
-      linkRows = rows;
-      console.log('🔵 [RESOURCES] Fallback insert result:', JSON.stringify(rows, null, 2));
-    }
-
-    console.log('🔵 [RESOURCES] Processing linkRows...');
-    console.log('🔵 [RESOURCES] linkRows type:', Array.isArray(linkRows) ? 'array' : typeof linkRows);
-    console.log('🔵 [RESOURCES] linkRows:', JSON.stringify(linkRows, null, 2));
-    const resourceLink = Array.isArray(linkRows) ? linkRows[0] : linkRows;
-    console.log('🔵 [RESOURCES] Extracted resourceLink:', JSON.stringify(resourceLink, null, 2));
-    if (!resourceLink) {
-      console.error('❌ [RESOURCES] No resourceLink created, returning 500');
-      return res.status(500).json({ message: 'Failed to create resource link in aarogya_mitra.patient_resources' });
-    }
-    const responseData = { ...resourceLink, phone, name };
-    console.log('✅ [RESOURCES] Returning success response:', JSON.stringify(responseData, null, 2));
-    return res.json({ resource: responseData });
-  } catch (err: any) {
-    console.error('❌ [RESOURCES] addResource exception caught:', err.message || err);
-    console.error('❌ [RESOURCES] Error stack:', err.stack);
-    const item = {
-      id: uuidv4(),
-      patient_user_id: patientId,
-      resource_user_id: uuidv4(),
-      phone,
-      name: name || phone,
-      role,
-      access_health,
-      access_fitness,
-      access_diet,
-      created_at: new Date().toISOString(),
-    };
-    inMemoryResources.push(item);
-    return res.json({ resource: item, warning: 'DB unavailable, stored in-memory' });
-  }
-};
+}

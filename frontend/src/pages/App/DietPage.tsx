@@ -1,10 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Salad, CheckCircle2, NotebookPen } from "lucide-react";
+import { dietApi } from "../../services/api";
+import { Salad, Calendar, Target, BookOpen, Layout } from "lucide-react";
+import { useParams } from "react-router-dom";
+import DietOverview from "../../components/Diet/DietOverview";
+import WeeklyMealPlanBuilder from "../../components/Diet/WeeklyMealPlanBuilder";
+import MealLogging from "../../components/Diet/MealLogging";
+import DaySummary from "../../components/Diet/DaySummary";
 
-const cardBase = "card";
+type TabType = "overview" | "weekly" | "logging" | "summary";
 
 const DietPage: React.FC = () => {
-  const [selectedClient, setSelectedClient] = useState<string | null>(() => localStorage.getItem("client-context-id"));
+  const { date } = useParams<{ date?: string }>();
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [progress, setProgress] = useState<any>({});
+  const [todayMeals, setTodayMeals] = useState<any[]>([]);
+  const [macros, setMacros] = useState<any>({});
+  const [loading, setLoading] = useState(true);
+  const [selectedClient, setSelectedClient] = useState<string | null>(
+    () => localStorage.getItem("client-context-id")
+  );
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -16,54 +30,140 @@ const DietPage: React.FC = () => {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const meals = [
-    { name: "Breakfast", items: "Oats + berries", status: "planned" },
-    { name: "Lunch", items: "Grilled chicken + salad", status: "planned" },
-    { name: "Dinner", items: "Dal + rice + veggies", status: "planned" },
+  useEffect(() => {
+    fetchOverviewData();
+  }, [selectedClient]);
+
+  useEffect(() => {
+    if (date) {
+      setActiveTab("summary");
+    }
+  }, [date]);
+
+  const fetchOverviewData = async () => {
+    setLoading(true);
+    try {
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7);
+      const endDate = new Date();
+      const today = new Date().toISOString().split("T")[0];
+
+      const [progressRes, calendarRes, macrosRes] = await Promise.allSettled([
+        dietApi.getProgress(
+          selectedClient || undefined,
+          startDate.toISOString().split("T")[0],
+          endDate.toISOString().split("T")[0]
+        ),
+        dietApi.getCalendarEntry(today),
+        dietApi.getProgress(
+          selectedClient || undefined,
+          startDate.toISOString().split("T")[0],
+          endDate.toISOString().split("T")[0]
+        ),
+      ]);
+
+      if (progressRes.status === "fulfilled") {
+        setProgress(progressRes.value);
+        setMacros(progressRes.value.macros || {});
+      }
+
+      if (calendarRes.status === "fulfilled" && calendarRes.value.entry) {
+        setTodayMeals(calendarRes.value.entry.meals || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch overview data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const adherence =
+    progress?.stats?.total_count > 0
+      ? Math.round((progress?.stats?.completed_count / progress?.stats?.total_count) * 100)
+      : 0;
+
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Overview", icon: <Target className="h-4 w-4" /> },
+    { id: "weekly", label: "Weekly Plan", icon: <Layout className="h-4 w-4" /> },
+    { id: "logging", label: "Log Meal", icon: <BookOpen className="h-4 w-4" /> },
+    { id: "summary", label: "Day Summary", icon: <Calendar className="h-4 w-4" /> },
   ];
 
-  return (
-    <div className="space-y-4">
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center gap-2 mb-2">
-          <Salad className="h-5 w-5 text-rose-200" />
-          <h2 className="text-lg font-semibold">Diet Overview</h2>
-        </div>
-        <p className="text-sm text-gray-300/80">Weekly meal templates, daily logs, and adherence.</p>
-      </section>
+  // If we have a date param, show day summary
+  if (date) {
+    return (
+      <div className="space-y-4 overflow-x-hidden">
+        <button
+          onClick={() => {
+            setActiveTab("overview");
+            window.history.pushState({}, "", "/app/diet");
+          }}
+          className="btn-secondary"
+        >
+          ← Back to Overview
+        </button>
+        <DaySummary
+          date={date}
+          selectedClient={selectedClient}
+          onComplete={fetchOverviewData}
+        />
+      </div>
+    );
+  }
 
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <NotebookPen className="h-5 w-5 text-rose-200" />
-            <h3 className="text-md font-semibold">Today’s meals</h3>
-          </div>
-          {!selectedClient && (
-            <button className="px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-sm">
-              Log meal
+  return (
+    <div className="space-y-4 overflow-x-hidden">
+      {/* Tabs */}
+      <div className="card p-2">
+        <div className="flex gap-2 overflow-x-auto">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition ${
+                activeTab === tab.id
+                  ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
             </button>
-          )}
-        </div>
-        <div className="space-y-2">
-          {meals.map((m) => (
-            <div key={m.name} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">{m.name}</p>
-                <span className="text-xs text-emerald-300/80 capitalize">{m.status}</span>
-              </div>
-              <p className="text-xs text-gray-400">{m.items}</p>
-            </div>
           ))}
         </div>
-      </section>
+      </div>
 
-      <section className={`${cardBase} p-4`}>
-        <p className="text-sm text-gray-400">Macros summary, adherence, and media uploads coming next.</p>
-        <div className="flex items-center gap-2 text-emerald-300/80 text-sm mt-2">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Ad-hoc entries won’t overwrite your weekly templates.</span>
-        </div>
-      </section>
+      {/* Tab Content */}
+      {activeTab === "overview" && (
+        <DietOverview
+          todayMeals={todayMeals}
+          progress={progress}
+          adherence={adherence}
+          macros={macros}
+        />
+      )}
+
+      {activeTab === "weekly" && (
+        <WeeklyMealPlanBuilder
+          selectedClient={selectedClient}
+          onRefresh={fetchOverviewData}
+        />
+      )}
+
+      {activeTab === "logging" && (
+        <MealLogging
+          selectedClient={selectedClient}
+          onSuccess={fetchOverviewData}
+        />
+      )}
+
+      {activeTab === "summary" && (
+        <DaySummary
+          date={new Date().toISOString().split("T")[0]}
+          selectedClient={selectedClient}
+          onComplete={fetchOverviewData}
+        />
+      )}
     </div>
   );
 };

@@ -1,16 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { healthApi } from "../../services/api";
-import { motion } from "framer-motion";
-import { Stethoscope, Activity, Upload, CheckCircle2 } from "lucide-react";
+import { Stethoscope, Calendar, Pill, FileText, Activity } from "lucide-react";
+import HealthOverview from "../../components/Health/HealthOverview";
+import AppointmentsList from "../../components/Health/AppointmentsList";
+import MedicinesList from "../../components/Health/MedicinesList";
+import DiagnosticsList from "../../components/Health/DiagnosticsList";
+import VitalsDashboard from "../../components/Health/VitalsDashboard";
 
-const cardBase = "card";
+type TabType = "overview" | "appointments" | "medicines" | "diagnostics" | "vitals";
 
 const HealthPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [medicines, setMedicines] = useState<any[]>([]);
+  const [diagnostics, setDiagnostics] = useState<any[]>([]);
   const [vitals, setVitals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<string | null>(() => localStorage.getItem("client-context-id"));
+  const [selectedClient, setSelectedClient] = useState<string | null>(
+    () => localStorage.getItem("client-context-id")
+  );
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -23,118 +31,139 @@ const HealthPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [a, v] = await Promise.allSettled([healthApi.getAppointments(), healthApi.getVitals()]);
-        if (a.status === "fulfilled") setAppointments(a.value.appointments || []);
-        if (v.status === "fulfilled") setVitals(v.value.vitals || []);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+    fetchAllData();
+  }, [selectedClient]);
 
-  const handleAddVital = async () => {
-    if (adding) return;
-    setAdding(true);
+  const fetchAllData = async () => {
+    setLoading(true);
     try {
-      const sample = { parameter: "Blood Pressure", value: "120/80", unit: "mmHg", measured_at: new Date().toISOString() };
-      const res = await healthApi.addVital(sample);
-      setVitals((prev) => [res.vital || sample, ...prev]);
+      const clientId = selectedClient || undefined;
+      const [apptRes, medRes, diagRes, vitRes] = await Promise.allSettled([
+        healthApi.getAppointments(clientId),
+        healthApi.getMedicines(clientId, true),
+        healthApi.getDiagnostics(clientId),
+        healthApi.getVitals(clientId),
+      ]);
+
+      if (apptRes.status === "fulfilled") {
+        setAppointments(apptRes.value.appointments || []);
+      }
+      if (medRes.status === "fulfilled") {
+        setMedicines(medRes.value.medicines || []);
+      }
+      if (diagRes.status === "fulfilled") {
+        setDiagnostics(diagRes.value.diagnostics || []);
+      }
+      if (vitRes.status === "fulfilled") {
+        setVitals(vitRes.value.vitals || []);
+      }
+    } catch (error) {
+      console.error("Failed to fetch health data:", error);
     } finally {
-      setAdding(false);
+      setLoading(false);
     }
   };
 
-  const handleExtractionStub = async () => {
-    const uploaded = await healthApi.uploadReport({ file_url: "https://example.com/report.pdf" });
-    const extracted = await healthApi.extractReport(uploaded.report.id);
-    if (extracted?.extraction?.vitals) {
-      await healthApi.confirmVitals(extracted.extraction.vitals);
-      setVitals((prev) => [...extracted.extraction.vitals, ...prev]);
-    }
-  };
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Overview", icon: <Stethoscope className="h-4 w-4" /> },
+    { id: "appointments", label: "Appointments", icon: <Calendar className="h-4 w-4" /> },
+    { id: "medicines", label: "Medicines", icon: <Pill className="h-4 w-4" /> },
+    { id: "diagnostics", label: "Diagnostics", icon: <FileText className="h-4 w-4" /> },
+    { id: "vitals", label: "Vitals", icon: <Activity className="h-4 w-4" /> },
+  ];
+
+  const upcomingAppointment = appointments
+    .filter((a) => a.status !== "completed" && a.status !== "cancelled")
+    .sort((a, b) => {
+      const dateA = a.datetime ? new Date(a.datetime).getTime() : 0;
+      const dateB = b.datetime ? new Date(b.datetime).getTime() : 0;
+      return dateA - dateB;
+    })[0];
+
+  const latestDiagnostic = diagnostics
+    .sort((a, b) => {
+      const dateA = a.test_date ? new Date(a.test_date).getTime() : 0;
+      const dateB = b.test_date ? new Date(b.test_date).getTime() : 0;
+      return dateB - dateA;
+    })[0];
+
+  const keyVitals = vitals
+    .filter((v) => {
+      const param = (v.parameter_name || v.parameter || "").toLowerCase();
+      return ["blood pressure", "hba1c", "weight", "bmi"].some((k) => param.includes(k));
+    })
+    .slice(0, 4);
 
   return (
-    <div className="space-y-4">
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center gap-2 mb-3">
-          <Stethoscope className="h-5 w-5 text-rose-200" />
-          <h2 className="text-lg font-semibold">Health Overview</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-rose-500/20 border border-rose-400/30 p-3">
-            <p className="text-xs text-rose-100/80">Upcoming</p>
-            <p className="text-2xl font-semibold">{appointments.length}</p>
-            <p className="text-xs text-rose-100/70">appointments</p>
-          </div>
-          <div className="rounded-xl bg-white/5 border border-white/10 p-3">
-            <p className="text-xs text-gray-300/80">Vitals tracked</p>
-            <p className="text-2xl font-semibold">{vitals.length}</p>
-            <p className="text-xs text-gray-300/70">entries</p>
-          </div>
-        </div>
-      </section>
-
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Activity className="h-5 w-5 text-rose-200" />
-            <h3 className="text-md font-semibold">Vitals</h3>
-          </div>
-          {!selectedClient && (
+    <div className="space-y-4 overflow-x-hidden">
+      {/* Tabs */}
+      <div className="card p-2">
+        <div className="flex gap-2 overflow-x-auto">
+          {tabs.map((tab) => (
             <button
-              onClick={handleAddVital}
-              className="px-3 py-2 rounded-xl bg-rose-500/80 text-sm font-medium shadow-lg shadow-rose-900/40"
-              disabled={adding}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition ${
+                activeTab === tab.id
+                  ? "bg-rose-500/20 text-rose-200 border border-rose-400/30"
+                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+              }`}
             >
-              {adding ? "Adding..." : "Add sample"}
+              {tab.icon}
+              {tab.label}
             </button>
-          )}
+          ))}
         </div>
-        {loading ? (
-          <p className="text-sm text-gray-400">Loading...</p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {vitals.length === 0 && <p className="text-sm text-gray-400 col-span-2">No vitals yet.</p>}
-            {vitals.map((v) => (
-              <div key={v.id || v.parameter} className="rounded-xl border border-white/10 bg-white/5 px-3 py-3">
-                <p className="text-xs text-gray-400">{v.parameter}</p>
-                <p className="text-xl font-semibold">
-                  {v.value}
-                  {v.unit && <span className="text-sm text-gray-300 ml-1">{v.unit}</span>}
-                </p>
-                {v.measured_at && <p className="text-[11px] text-gray-500">{v.measured_at}</p>}
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      </div>
 
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Upload className="h-5 w-5 text-rose-200" />
-            <h3 className="text-md font-semibold">Diagnostics</h3>
-          </div>
-          {!selectedClient && (
-            <button
-              onClick={handleExtractionStub}
-              className="px-3 py-2 rounded-xl bg-white/10 border border-white/10 text-sm"
-            >
-              Upload & Extract (stub)
-            </button>
-          )}
-        </div>
-        <p className="text-sm text-gray-400">
-          Upload a report and we’ll propose vitals for review. Low confidence values will require confirmation.
-        </p>
-        <div className="flex items-center gap-2 text-emerald-300/80 text-sm mt-2">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>Review & confirm flow is enabled.</span>
-        </div>
-      </section>
+      {/* Tab Content */}
+      {activeTab === "overview" && (
+        <HealthOverview
+          appointmentsCount={appointments.length}
+          medicinesCount={medicines.length}
+          diagnosticsCount={diagnostics.length}
+          vitalsCount={vitals.length}
+          upcomingAppointment={upcomingAppointment}
+          latestDiagnostic={latestDiagnostic}
+          keyVitals={keyVitals}
+        />
+      )}
+
+      {activeTab === "appointments" && (
+        <AppointmentsList
+          appointments={appointments}
+          loading={loading}
+          selectedClient={selectedClient}
+          onRefresh={fetchAllData}
+        />
+      )}
+
+      {activeTab === "medicines" && (
+        <MedicinesList
+          medicines={medicines}
+          loading={loading}
+          selectedClient={selectedClient}
+          onRefresh={fetchAllData}
+        />
+      )}
+
+      {activeTab === "diagnostics" && (
+        <DiagnosticsList
+          diagnostics={diagnostics}
+          loading={loading}
+          selectedClient={selectedClient}
+          onRefresh={fetchAllData}
+        />
+      )}
+
+      {activeTab === "vitals" && (
+        <VitalsDashboard
+          vitals={vitals}
+          loading={loading}
+          selectedClient={selectedClient}
+          onRefresh={fetchAllData}
+        />
+      )}
     </div>
   );
 };

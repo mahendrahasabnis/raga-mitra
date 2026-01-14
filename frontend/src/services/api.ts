@@ -6,12 +6,12 @@ const getApiBaseUrl = () => {
   // Health/data backend (Aarogya Mitra)
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '192.168.1.14') {
-    return 'https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api';
+    return 'https://aarogya-mitra-backend-integrated-pxnrabe2qq-el.a.run.app/api';
   }
   if (window.location.hostname === '34.117.220.98' || window.location.hostname.includes('34.117.220.98')) {
     return 'http://34.117.220.98/api';
   }
-  return 'https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api';
+  return 'https://aarogya-mitra-backend-integrated-pxnrabe2qq-el.a.run.app/api';
 };
 
 const getUserApiBaseUrl = () => {
@@ -122,20 +122,58 @@ export const authApi = {
 
 // Health module
 export const healthApi = {
-  getAppointments: async () => {
-    const response = await api.get('/health/appointments');
+  // Appointments
+  getAppointments: async (clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get('/health/appointments', { params });
+    return response.data;
+  },
+  getAppointment: async (id: string) => {
+    const response = await api.get(`/health/appointments/${id}`);
     return response.data;
   },
   createAppointment: async (payload: any) => {
     const response = await api.post('/health/appointments', payload);
     return response.data;
   },
-  getVitals: async () => {
-    const response = await api.get('/health/vitals');
+  updateAppointment: async (id: string, payload: any) => {
+    const response = await api.put(`/health/appointments/${id}`, payload);
     return response.data;
   },
-  addVital: async (payload: any) => {
-    const response = await api.post('/health/vitals', payload);
+  addAppointmentAttachment: async (appointmentId: string, payload: any) => {
+    const response = await api.post(`/health/appointments/${appointmentId}/attachments`, payload);
+    return response.data;
+  },
+
+  // Medicines
+  getMedicines: async (clientId?: string, activeOnly?: boolean) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (activeOnly) params.active_only = 'true';
+    const response = await api.get('/health/medicines', { params });
+    return response.data;
+  },
+  addMedicine: async (payload: any) => {
+    const response = await api.post('/health/medicines', payload);
+    return response.data;
+  },
+  updateMedicine: async (id: string, payload: any) => {
+    const response = await api.put(`/health/medicines/${id}`, payload);
+    return response.data;
+  },
+  deleteMedicine: async (id: string) => {
+    const response = await api.delete(`/health/medicines/${id}`);
+    return response.data;
+  },
+
+  // Diagnostics
+  getDiagnostics: async (clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get('/health/diagnostics', { params });
+    return response.data;
+  },
+  addDiagnostic: async (payload: any) => {
+    const response = await api.post('/health/diagnostics', payload);
     return response.data;
   },
   uploadReport: async (payload: any) => {
@@ -148,6 +186,234 @@ export const healthApi = {
   },
   confirmVitals: async (vitals: any[]) => {
     const response = await api.post('/health/vitals/confirm', { vitals });
+    return response.data;
+  },
+
+  // Vitals
+  getVitals: async (clientId?: string, filters?: { parameter?: string; start_date?: string; end_date?: string }) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (filters?.parameter) params.parameter = filters.parameter;
+    if (filters?.start_date) params.start_date = filters.start_date;
+    if (filters?.end_date) params.end_date = filters.end_date;
+    const response = await api.get('/health/vitals', { params });
+    return response.data;
+  },
+  getVitalsGraph: async (parameter: string, clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = { parameter };
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/health/vitals/graph', { params });
+    return response.data;
+  },
+  getVitalsTrends: async (parameter: string, clientId?: string) => {
+    const params: any = { parameter };
+    if (clientId) params.client_id = clientId;
+    const response = await api.get('/health/vitals/trends', { params });
+    return response.data;
+  },
+  addVital: async (payload: any) => {
+    const response = await api.post('/health/vitals', payload);
+    return response.data;
+  },
+};
+
+// Fitness module
+export const fitnessApi = {
+  // Exercise Templates (Library)
+  getExerciseTemplates: async (category?: string, libraryType?: 'own' | 'trainer', clientId?: string) => {
+    const params: any = {};
+    if (category) params.category = category;
+    if (libraryType) params.library_type = libraryType;
+    if (clientId) params.client_id = clientId;
+    const response = await api.get('/fitness/exercise-templates', { params });
+    return response.data;
+  },
+  getExerciseTemplate: async (id: string) => {
+    const response = await api.get(`/fitness/exercise-templates/${id}`);
+    return response.data;
+  },
+  createExerciseTemplate: async (payload: any) => {
+    const response = await api.post('/fitness/exercise-templates', payload);
+    return response.data;
+  },
+  updateExerciseTemplate: async (id: string, payload: any) => {
+    const response = await api.put(`/fitness/exercise-templates/${id}`, payload);
+    return response.data;
+  },
+  exportExerciseTemplates: async () => {
+    const response = await api.get('/fitness/exercise-templates/export', {
+      responseType: 'blob' // Important: get binary data for Excel file
+    });
+    // Return blob directly for Excel file download
+    return response.data;
+  },
+  importExerciseTemplates: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/fitness/exercise-templates/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+
+  // Weekly Templates
+  getWeekTemplates: async (clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get('/fitness/week-templates', { params });
+    return response.data;
+  },
+  getWeekTemplate: async (id: string) => {
+    const response = await api.get(`/fitness/week-templates/${id}`);
+    return response.data;
+  },
+  createWeekTemplate: async (payload: any) => {
+    const response = await api.post('/fitness/week-templates', payload);
+    return response.data;
+  },
+  updateWeekTemplate: async (id: string, payload: any) => {
+    const response = await api.put(`/fitness/week-templates/${id}`, payload);
+    return response.data;
+  },
+
+  // Calendar Entries
+  getCalendarEntries: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/fitness/calendar', { params });
+    return response.data;
+  },
+  getCalendarEntry: async (date: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/fitness/calendar/${date}`, { params });
+    return response.data;
+  },
+  createCalendarEntry: async (payload: any) => {
+    const response = await api.post('/fitness/calendar', payload);
+    return response.data;
+  },
+
+  // Tracking
+  getTracking: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/fitness/tracking', { params });
+    return response.data;
+  },
+  createTracking: async (payload: any) => {
+    const response = await api.post('/fitness/tracking', payload);
+    return response.data;
+  },
+  updateTracking: async (id: string, payload: any) => {
+    const response = await api.put(`/fitness/tracking/${id}`, payload);
+    return response.data;
+  },
+
+  // Progress & Streak
+  getProgress: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/fitness/progress', { params });
+    return response.data;
+  },
+};
+
+// Diet module
+export const dietApi = {
+  // Weekly Templates
+  getWeekTemplates: async (clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get('/diet/week-templates', { params });
+    return response.data;
+  },
+  getWeekTemplate: async (id: string) => {
+    const response = await api.get(`/diet/week-templates/${id}`);
+    return response.data;
+  },
+  createWeekTemplate: async (payload: any) => {
+    const response = await api.post('/diet/week-templates', payload);
+    return response.data;
+  },
+  updateWeekTemplate: async (id: string, payload: any) => {
+    const response = await api.put(`/diet/week-templates/${id}`, payload);
+    return response.data;
+  },
+
+  // Calendar Entries
+  getCalendarEntries: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/diet/calendar', { params });
+    return response.data;
+  },
+  getCalendarEntry: async (date: string) => {
+    const response = await api.get(`/diet/calendar/${date}`);
+    return response.data;
+  },
+  createCalendarEntry: async (payload: any) => {
+    const response = await api.post('/diet/calendar', payload);
+    return response.data;
+  },
+
+  // Tracking
+  getTracking: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/diet/tracking', { params });
+    return response.data;
+  },
+  createTracking: async (payload: any) => {
+    const response = await api.post('/diet/tracking', payload);
+    return response.data;
+  },
+  updateTracking: async (id: string, payload: any) => {
+    const response = await api.put(`/diet/tracking/${id}`, payload);
+    return response.data;
+  },
+
+  // Ad-hoc Entries
+  getAdHocEntries: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/diet/ad-hoc', { params });
+    return response.data;
+  },
+  createAdHocEntry: async (payload: any) => {
+    const response = await api.post('/diet/ad-hoc', payload);
+    return response.data;
+  },
+  updateAdHocEntry: async (id: string, payload: any) => {
+    const response = await api.put(`/diet/ad-hoc/${id}`, payload);
+    return response.data;
+  },
+  deleteAdHocEntry: async (id: string) => {
+    const response = await api.delete(`/diet/ad-hoc/${id}`);
+    return response.data;
+  },
+
+  // Progress & Stats
+  getProgress: async (clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get('/diet/progress', { params });
     return response.data;
   },
 };
@@ -174,6 +440,30 @@ export const resourcesApi = {
       return response.data;
     } catch (err: any) {
       console.error('🟢 [API] resourcesApi.add error:', err);
+      console.error('🟢 [API] Error response:', err.response?.data);
+      throw err;
+    }
+  },
+  updateAccess: async (id: string, payload: { access_health?: boolean; access_fitness?: boolean; access_diet?: boolean; roles?: string[] }) => {
+    console.log('🟢 [API] resourcesApi.updateAccess called with id:', id, 'payload:', payload);
+    try {
+      const response = await api.put(`/resources/${id}/access`, payload);
+      console.log('🟢 [API] resourcesApi.updateAccess response:', response.data);
+      return response.data;
+    } catch (err: any) {
+      console.error('🟢 [API] resourcesApi.updateAccess error:', err);
+      console.error('🟢 [API] Error response:', err.response?.data);
+      throw err;
+    }
+  },
+  delete: async (id: string) => {
+    console.log('🟢 [API] resourcesApi.delete called with id:', id);
+    try {
+      const response = await api.delete(`/resources/${id}`);
+      console.log('🟢 [API] resourcesApi.delete response:', response.data);
+      return response.data;
+    } catch (err: any) {
+      console.error('🟢 [API] resourcesApi.delete error:', err);
       console.error('🟢 [API] Error response:', err.response?.data);
       throw err;
     }

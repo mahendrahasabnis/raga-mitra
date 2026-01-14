@@ -34,7 +34,7 @@ steps:
       - '--cpu=1'
       - '--max-instances=10'
       - '--min-instances=0'
-      - '--set-env-vars=VITE_API_BASE_URL=https://aarogya-mitra-backend-integrated-bnbuvw3hkq-el.a.run.app/api,NODE_ENV=production'
+      - '--set-env-vars=VITE_API_BASE_URL=https://aarogya-mitra-backend-integrated-pxnrabe2qq-el.a.run.app/api,NODE_ENV=production'
 
 images:
   - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'

@@ -14,6 +14,8 @@ let userRoutes: any;
 let hcpRoutes: any;
 let appointmentRoutes: any;
 let healthRoutes: any;
+let fitnessRoutes: any;
+let dietRoutes: any;
 let resourcesRoutes: any;
 let repositoryRoutes: any;
 let pastVisitRoutes: any;
@@ -32,8 +34,11 @@ const PORT = parseInt(process.env.PORT || '3002', 10);
 // Trust proxy for Cloud Run and CDN
 app.set('trust proxy', 1);
 
-// Security middleware
-app.use(helmet());
+// Security middleware - configure helmet to work with CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
+}));
 
 // CORS configuration - always allow localhost for local development
 const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
@@ -120,6 +125,7 @@ import('jsonwebtoken')
 
         // Direct connection to platforms_99 (avoid decorator issues)
         const { Sequelize } = await import('sequelize');
+        const dbSSL = process.env.DB_SSL === 'true';
         const sequelize = new Sequelize(
           process.env.SHARED_DB_NAME || process.env.DB_NAME || 'platforms_99',
           process.env.SHARED_DB_USER || process.env.DB_USER || 'app_user',
@@ -129,6 +135,12 @@ import('jsonwebtoken')
             port: parseInt(process.env.SHARED_DB_PORT || process.env.DB_PORT || '5432'),
             dialect: 'postgres',
             logging: false,
+            dialectOptions: dbSSL ? {
+              ssl: {
+                require: true,
+                rejectUnauthorized: false
+              }
+            } : undefined
           }
         );
 
@@ -275,6 +287,8 @@ const initializeRoutesAndDatabase = async () => {
       import('./routes-postgres/medicalHistory'),
       import('./routes-postgres/vitalParameters'),
       import('./routes-postgres/health'),
+      import('./routes-postgres/fitness'),
+      import('./routes-postgres/diet'),
       import('./routes-postgres/resources'),
     ]);
     const routeImportTime = Date.now() - routeImportStart;
@@ -293,7 +307,9 @@ const initializeRoutesAndDatabase = async () => {
     medicalHistoryRoutes = routes[8].status === 'fulfilled' ? routes[8].value.default : null;
     vitalParametersRoutes = routes[9].status === 'fulfilled' ? routes[9].value.default : null;
     healthRoutes = routes[10].status === 'fulfilled' ? routes[10].value.default : null;
-    resourcesRoutes = routes[11].status === 'fulfilled' ? routes[11].value.default : null;
+    fitnessRoutes = routes[11].status === 'fulfilled' ? routes[11].value.default : null;
+    dietRoutes = routes[12].status === 'fulfilled' ? routes[12].value.default : null;
+    resourcesRoutes = routes[13].status === 'fulfilled' ? routes[13].value.default : null;
 
     console.log(`🔍 [DEBUG] Route extraction complete:`);
     console.log(`  - authRoutes: ${!!authRoutes}`);
@@ -302,7 +318,7 @@ const initializeRoutesAndDatabase = async () => {
     console.log(`  - hcpRoutes: ${!!hcpRoutes}`);
 
     // Log any failed route imports
-    const routeNames = ['auth', 'patients', 'users', 'hcp', 'appointments', 'repository', 'pastVisits', 'repositories', 'medicalHistory', 'vitalParameters', 'health', 'resources'];
+    const routeNames = ['auth', 'patients', 'users', 'hcp', 'appointments', 'repository', 'pastVisits', 'repositories', 'medicalHistory', 'vitalParameters', 'health', 'fitness', 'diet', 'resources'];
     routes.forEach((route, index) => {
       if (route.status === 'rejected') {
         console.error(`❌ [DEBUG] Failed to load ${routeNames[index]} route:`, route.reason?.message || route.reason);
@@ -360,6 +376,8 @@ app.use('/api/users', userRoutes);
     if (medicalHistoryRoutes) app.use('/api/medical-history', medicalHistoryRoutes);
     if (vitalParametersRoutes) app.use('/api/vital-parameters', vitalParametersRoutes);
     if (healthRoutes) app.use('/api/health', healthRoutes);
+    if (fitnessRoutes) app.use('/api/fitness', fitnessRoutes);
+    if (dietRoutes) app.use('/api/diet', dietRoutes);
     if (resourcesRoutes) app.use('/api/resources', resourcesRoutes);
 
     // Now load database (may fail; routes stay registered)
@@ -423,6 +441,30 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       await ensurePatientResources();
     } catch (e: any) {
       console.warn('⚠️ Could not ensure patient_resources table:', e?.message || e);
+    }
+
+    // Ensure health module tables exist in aarogya_mitra
+    try {
+      const { ensureHealthTables } = await import('./utils/ensureHealthTables');
+      await ensureHealthTables();
+    } catch (e: any) {
+      console.warn('⚠️ Could not ensure health module tables:', e?.message || e);
+    }
+
+    // Ensure fitness module tables exist in aarogya_mitra
+    try {
+      const { ensureFitnessTables } = await import('./utils/ensureFitnessTables');
+      await ensureFitnessTables();
+    } catch (e: any) {
+      console.warn('⚠️ Could not ensure fitness module tables:', e?.message || e);
+    }
+
+    // Ensure diet module tables exist in aarogya_mitra
+    try {
+      const { ensureDietTables } = await import('./utils/ensureDietTables');
+      await ensureDietTables();
+    } catch (e: any) {
+      console.warn('⚠️ Could not ensure diet module tables:', e?.message || e);
     }
 
     // Sync database (safe mode - no data loss)

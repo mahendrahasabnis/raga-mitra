@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Calendar, HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare } from "lucide-react";
+import { Calendar, HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { resourcesApi } from "../../services/api";
 
@@ -28,6 +28,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
   const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string; role?: string }>>([]);
   const [selectedClient, setSelectedClient] = useState<string | null>(null);
   const [clientSearch, setClientSearch] = useState("");
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
@@ -98,6 +99,22 @@ const AppShell: React.FC<Props> = ({ children }) => {
     );
   }, [clients, clientSearch]);
 
+  const selectedClientLabel = useMemo(() => {
+    if (!selectedClient) return "My data";
+    const client = clients.find((c) => c.id === selectedClient);
+    if (!client) return "My data";
+    const name = client.name || "";
+    const phone = client.phone || "";
+    if (name && phone) return `${name} - ${phone}`;
+    return name || phone || "My data";
+  }, [clients, selectedClient]);
+
+  const selectedClientName = useMemo(() => {
+    if (!selectedClient) return "";
+    const client = clients.find((c) => c.id === selectedClient);
+    return client?.name || client?.phone || "";
+  }, [clients, selectedClient]);
+
   useEffect(() => {
     if (!clientSearch) return;
     if (filteredClients.length === 1) {
@@ -125,114 +142,151 @@ const AppShell: React.FC<Props> = ({ children }) => {
   return (
     <div className={`min-h-screen ${shellBg} flex flex-col`}>
       <header className={`sticky top-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)' }}>
-        <div className="safe-area px-4 py-3 flex flex-col gap-3">
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-center">
+        <div className="safe-area px-4 py-3 flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex flex-col gap-0.5">
               <p className={`text-xs uppercase tracking-[0.15em] ${theme === "light" ? "text-rose-600/80" : "text-rose-300/80"}`}>Aarogya-Mitra</p>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <h1 className="text-lg font-semibold whitespace-nowrap">Welcome back</h1>
-                {user?.name && <p className="text-sm font-semibold whitespace-nowrap">{user.name}</p>}
-                {rolesLabel && (
-                  <p className={`text-[11px] mt-0.5 ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
-                    Roles: {rolesLabel}
-                  </p>
-                )}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <button
-                  onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-                  className={`h-10 px-4 min-w-[96px] rounded-2xl border text-sm font-medium flex items-center gap-2 justify-center transition ${
-                    theme === "light"
-                      ? "bg-white text-slate-900 border-black/10 shadow-sm"
-                      : "bg-white/10 border-white/15 text-white"
-                  }`}
-                >
-                  {theme === "light" ? "Dark" : "Light"}
-                </button>
-                <button
-                  onClick={() => { logout(); navigate("/login"); }}
-                  className={`h-10 px-4 min-w-[96px] rounded-2xl text-sm font-medium flex items-center gap-2 justify-center transition ${
-                    theme === "light" ? "bg-white text-slate-900 border border-black/10 hover:bg-slate-100 shadow-sm" : "bg-white/10 border border-white/15 hover:bg-white/15 text-white"
-                  }`}
-                >
-                  <LogOut className={`h-4 w-4 ${theme === "light" ? "text-rose-700" : "text-rose-200"}`} />
-                  <span>Logout</span>
-                </button>
-              </div>
-            </div>
-
-            {hasResourceRole && (
-              <div className="flex flex-wrap items-center gap-2 justify-center">
-                <input
-                  value={clientSearch}
-                  onChange={(e) => setClientSearch(e.target.value)}
-                  placeholder="Search patients..."
-                  className={`h-10 px-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 ${
-                    theme === "light"
-                      ? "bg-white border border-slate-200 text-slate-900"
-                      : "bg-white/10 border border-white/15 text-white placeholder:text-gray-300"
-                  } w-48 md:w-64`}
-                />
-                <select
-                  value={selectedClient || ""}
-                  onChange={(e) => setSelectedClient(e.target.value || null)}
-                  className={`h-10 px-3 rounded-2xl text-sm font-medium border transition leading-tight ${
-                    theme === "light"
-                      ? "bg-white text-slate-900 border-slate-200 shadow-sm"
-                      : "bg-white/10 text-white border-white/15"
-                  }`}
-                >
-                  <option value="">My data</option>
-                  {filteredClients.map((c) => {
-                    const displayName = c.name || '';
-                    const displayPhone = c.phone || '';
-                    const displayText = displayName 
-                      ? (displayPhone ? `${displayName} - ${displayPhone}` : displayName)
-                      : (displayPhone || 'Unknown');
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {displayText}
-                      </option>
-                    );
-                  })}
-                </select>
-                {selectedClient && (
-                  <div className="flex items-center gap-2">
+              {user?.name && <p className="text-sm font-semibold whitespace-normal">{user.name}</p>}
+              {rolesLabel && (
+                <p className={`text-[11px] ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
+                  Roles: {rolesLabel}
+                </p>
+              )}
+              {rolesLabel && (
+                <div className={`h-px w-full ${theme === "light" ? "bg-slate-200" : "bg-white/10"}`} />
+              )}
+              {selectedClientName && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-sm font-semibold ${theme === "light" ? "text-emerald-700" : "text-emerald-200"}`}>
+                    {selectedClientName}
+                  </span>
+                  <span className={`text-[11px] ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
                     <a
                       href={`tel:${clients.find((c) => c.id === selectedClient)?.phone || ""}`}
-                      className={`h-10 w-10 rounded-2xl grid place-items-center ${
-                        theme === "light" ? "bg-white border border-slate-200 text-rose-700" : "bg-white/10 border border-white/15 text-rose-100"
-                      }`}
+                      className="hover:underline"
                     >
-                      <PhoneCall className="h-4 w-4" />
+                      CALL
                     </a>
+                    {" / "}
                     <a
                       href={`sms:${clients.find((c) => c.id === selectedClient)?.phone || ""}`}
-                      className={`h-10 w-10 rounded-2xl grid place-items-center ${
-                        theme === "light" ? "bg-white border border-slate-200 text-rose-700" : "bg-white/10 border border-white/15 text-rose-100"
-                      }`}
+                      className="hover:underline"
                     >
-                      <MessageSquare className="h-4 w-4" />
+                      SMS
                     </a>
+                    {" / "}
                     <a
                       href={`https://wa.me/${(clients.find((c) => c.id === selectedClient)?.phone || "").replace(/[^0-9]/g, "")}`}
                       target="_blank"
                       rel="noreferrer"
-                      className={`h-10 w-10 rounded-2xl grid place-items-center ${
-                        theme === "light" ? "bg-white border border-slate-200 text-rose-700" : "bg-white/10 border border-white/15 text-rose-100"
-                      }`}
+                      className="hover:underline"
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      Whats App
                     </a>
-                  </div>
-                )}
-              </div>
-            )}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {hasResourceRole && (
+                <>
+                  <button
+                    onClick={() => setClientPickerOpen(true)}
+                    className={`h-8 w-8 rounded-2xl text-sm font-medium border transition flex items-center justify-center ${
+                      theme === "light"
+                        ? "bg-white text-slate-900 border-slate-200 shadow-sm"
+                        : "bg-white/10 text-white border-white/15"
+                    }`}
+                    title="Clients"
+                  >
+                    <Users className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              )}
+                <button
+                  onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
+                className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
+                    theme === "light"
+                      ? "bg-white text-slate-900 border-black/10 shadow-sm"
+                      : "bg-white/10 border-white/15 text-white"
+                  }`}
+                  title={theme === "light" ? "Switch to dark" : "Switch to light"}
+                >
+                {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  onClick={() => { logout(); navigate("/login"); }}
+                className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
+                    theme === "light" ? "bg-white text-slate-900 border-black/10 hover:bg-slate-100 shadow-sm" : "bg-white/10 border border-white/15 hover:bg-white/15 text-white"
+                  }`}
+                  title="Logout"
+                >
+                <LogOut className={`h-3.5 w-3.5 ${theme === "light" ? "text-rose-700" : "text-rose-200"}`} />
+                </button>
+            </div>
           </div>
         </div>
       </header>
+      {clientPickerOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="card max-w-xl w-full p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Select Client</h2>
+              <button
+                onClick={() => setClientPickerOpen(false)}
+                className="btn-secondary"
+              >
+                Close
+              </button>
+            </div>
+            <input
+              value={clientSearch}
+              onChange={(e) => setClientSearch(e.target.value)}
+              placeholder="Search clients by name or phone..."
+              className={`h-10 px-3 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 w-full ${
+                theme === "light"
+                  ? "bg-white border border-slate-200 text-slate-900"
+                  : "bg-white/10 border border-white/15 text-white placeholder:text-gray-300"
+              }`}
+            />
+            <div className="mt-3 max-h-80 overflow-y-auto space-y-2">
+              <button
+                onClick={() => {
+                  setSelectedClient(null);
+                  setClientPickerOpen(false);
+                }}
+                className="w-full text-left p-3 rounded-lg bg-white/5 hover:bg-white/10 transition"
+              >
+                My data
+              </button>
+              {filteredClients.map((c) => {
+                const displayName = c.name || '';
+                const displayPhone = c.phone || '';
+                const displayText = displayName
+                  ? (displayPhone ? `${displayName} - ${displayPhone}` : displayName)
+                  : (displayPhone || 'Unknown');
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setSelectedClient(c.id);
+                      setClientPickerOpen(false);
+                    }}
+                    className={`w-full text-left p-3 rounded-lg transition ${
+                      selectedClient === c.id ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 hover:bg-white/10"
+                    }`}
+                  >
+                    {displayText}
+                  </button>
+                );
+              })}
+              {filteredClients.length === 0 && (
+                <div className="text-sm text-gray-400 text-center py-6">No clients found</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto pb-24 px-4 pt-4">
         {children}

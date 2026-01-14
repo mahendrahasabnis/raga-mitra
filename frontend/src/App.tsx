@@ -63,6 +63,7 @@ const App: React.FC = () => {
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="fitness" element={<FitnessPage />} />
+          <Route path="fitness/session/:date" element={<FitnessPage />} />
           <Route path="diet" element={<DietPage />} />
           <Route path="resources" element={<ResourcesPage />} />
           <Route index element={<Navigate to="/app/today" replace />} />

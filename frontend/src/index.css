@@ -76,6 +76,30 @@
     overflow-x: hidden;
   }
 
+  /* Hide horizontal scrollbar for Health and Fitness modules */
+  #root {
+    overflow-x: hidden;
+  }
+
+  /* Hide scrollbars globally - All browsers */
+  html,
+  body,
+  #root,
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE and Edge */
+  }
+
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #root::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+    width: 0;
+    height: 0;
+    background: transparent;
+  }
+
   /* Subtle Gradient Overlay */
   body::before {
     content: '';
