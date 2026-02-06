@@ -1,17 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { fitnessApi } from "../../services/api";
 import { Dumbbell, Calendar, Target, BookOpen, Layout } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import FitnessOverview from "../../components/Fitness/FitnessOverview";
 import WeeklyPlanBuilder from "../../components/Fitness/WeeklyPlanBuilder";
 import CalendarView from "../../components/Fitness/CalendarView";
 import SessionDetail from "../../components/Fitness/SessionDetail";
 import ExerciseLibrary from "../../components/Fitness/ExerciseLibrary";
+import SelectDropdown from "../../components/UI/SelectDropdown";
 
 type TabType = "overview" | "weekly" | "calendar" | "library";
 
 const FitnessPage: React.FC = () => {
   const { date } = useParams<{ date?: string }>();
+  const [searchParams] = useSearchParams();
+  const sessionId = searchParams.get("sessionId");
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [progress, setProgress] = useState<any>({});
   const [streak, setStreak] = useState(0);
@@ -25,6 +29,15 @@ const FitnessPage: React.FC = () => {
   const [calendarTemplateId, setCalendarTemplateId] = useState<string>(
     () => localStorage.getItem("calendar-template-id") || ""
   );
+  const [needsSessionSetup, setNeedsSessionSetup] = useState(false);
+
+  const templateOptions = [
+    { value: "", label: "Latest template" },
+    ...weekTemplates.map((template) => ({
+      value: template.id,
+      label: template.name,
+    })),
+  ];
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -43,9 +56,9 @@ const FitnessPage: React.FC = () => {
   useEffect(() => {
     if (date) {
       setActiveTab("calendar");
-      fetchSessionForDate(date);
+      fetchSessionForDate(date, sessionId || undefined);
     }
-  }, [date]);
+  }, [date, sessionId]);
 
   useEffect(() => {
     if (activeTab === "calendar" || date) {
@@ -56,9 +69,14 @@ const FitnessPage: React.FC = () => {
   const fetchWeekTemplates = async () => {
     try {
       const res = await fitnessApi.getWeekTemplates(selectedClient || undefined);
-      setWeekTemplates(res.templates || []);
-      if (!calendarTemplateId && res.templates && res.templates.length > 0) {
-        setCalendarTemplateId(res.templates[0].id);
+      const activeTemplates = (res.templates || []).filter((t: any) => t.is_active !== false);
+      setWeekTemplates(activeTemplates);
+      if (calendarTemplateId && !activeTemplates.find((t: any) => t.id === calendarTemplateId)) {
+        setCalendarTemplateId("");
+        localStorage.removeItem("calendar-template-id");
+      }
+      if (!calendarTemplateId && activeTemplates.length > 0) {
+        setCalendarTemplateId(activeTemplates[0].id);
       }
     } catch (error) {
       console.error("Failed to fetch week templates:", error);
@@ -106,84 +124,134 @@ const FitnessPage: React.FC = () => {
     }
   };
 
-  const fetchSessionForDate = async (dateStr: string) => {
+  const fetchSessionForDate = async (dateStr: string, targetSessionId?: string) => {
     try {
       const res = await fitnessApi.getCalendarEntry(dateStr, selectedClient || undefined);
       if (res.entry && res.entry.sessions?.length > 0) {
-        setSelectedSession({ ...res.entry.sessions[0], date: dateStr, calendar_entry_id: res.entry.id });
+        const matchedSession = targetSessionId
+          ? res.entry.sessions.find((s: any) => String(s.id) === String(targetSessionId))
+          : res.entry.sessions[0];
+        const fallbackSession = matchedSession || res.entry.sessions[0];
+        setNeedsSessionSetup(false);
+        setSelectedSession({ ...fallbackSession, date: dateStr, calendar_entry_id: res.entry.id });
+        return;
       }
+      setSelectedSession(null);
+      setNeedsSessionSetup(true);
     } catch (error) {
       const status = (error as any)?.response?.status;
       if (status !== 404) {
         console.error("Failed to fetch session:", error);
         return;
       }
+      setSelectedSession(null);
+      setNeedsSessionSetup(true);
+    }
+  };
 
-      try {
-        let templateId = calendarTemplateId;
-        if (!templateId) {
-          const templatesRes = await fitnessApi.getWeekTemplates(selectedClient || undefined);
-          const latestTemplate = templatesRes.templates?.[0];
-          templateId = latestTemplate?.id || "";
-        }
-        if (!templateId) return;
-
-        const templateRes = await fitnessApi.getWeekTemplate(templateId);
-        const template = templateRes.template;
-        if (!template?.days?.length) return;
-
-        const dateObj = new Date(dateStr);
-        const dayOfWeek = (dateObj.getDay() + 6) % 7; // 0=Mon ... 6=Sun
-        const day = template.days.find((d: any) => d.day_of_week === dayOfWeek);
-        if (!day || !day.sessions || day.sessions.length === 0) return;
-
-        const payload = {
-          date: dateStr,
-          week_template_id: template.id,
-          template_day_id: day.id,
-          sessions: day.sessions.map((session: any) => ({
-            session_name: session.session_name,
-            session_order: session.session_order,
-            notes: session.notes || null,
-            exercises: (session.exercises || []).map((exercise: any) => {
-              const hasSet3 = exercise.set_03_rep || exercise.weight_03;
-              const hasSet2 = exercise.set_02_rep || exercise.weight_02;
-              const hasSet1 = exercise.set_01_rep || exercise.weight_01;
-              const computedSets = hasSet3 ? 3 : hasSet2 ? 2 : hasSet1 ? 1 : null;
-              return {
-                exercise_template_id: exercise.exercise_template_id || null,
-                exercise_name: exercise.exercise_name,
-                exercise_order: exercise.exercise_order || 0,
-                sets: exercise.sets || computedSets,
-                reps: exercise.reps || exercise.set_01_rep || null,
-                duration: exercise.duration || null,
-                weight: exercise.weight || exercise.weight_01 || null,
-                weight_unit: exercise.weight_unit || null,
-                set_01_rep: exercise.set_01_rep || null,
-                weight_01: exercise.weight_01 || null,
-                set_02_rep: exercise.set_02_rep || null,
-                weight_02: exercise.weight_02 || null,
-                set_03_rep: exercise.set_03_rep || null,
-                weight_03: exercise.weight_03 || null,
-                rest_seconds: exercise.rest_seconds || null,
-                notes: exercise.notes || null,
-              };
-            }),
-          })),
-          client_id: selectedClient || undefined,
-        };
-
-        const created = await fitnessApi.createCalendarEntry(payload);
-        if (created.entry?.sessions?.length > 0) {
-          setSelectedSession({
-            ...created.entry.sessions[0],
-            date: dateStr,
-            calendar_entry_id: created.entry.id,
-          });
-        }
-      } catch (fallbackError) {
-        console.error("Failed to build session from template:", fallbackError);
+  const createSessionFromTemplate = async (dateStr: string, templateId?: string) => {
+    try {
+      let resolvedTemplateId = templateId || calendarTemplateId;
+      if (!resolvedTemplateId) {
+        const templatesRes = await fitnessApi.getWeekTemplates(selectedClient || undefined);
+        const latestTemplate = templatesRes.templates?.[0];
+        resolvedTemplateId = latestTemplate?.id || "";
       }
+      if (!resolvedTemplateId) return;
+
+      const templateRes = await fitnessApi.getWeekTemplate(resolvedTemplateId);
+      const template = templateRes.template;
+      if (!template?.days?.length) return;
+
+      const dateObj = new Date(dateStr);
+      const dayOfWeek = (dateObj.getDay() + 6) % 7; // 0=Mon ... 6=Sun
+      const day = template.days.find((d: any) => d.day_of_week === dayOfWeek);
+      if (!day || !day.sessions || day.sessions.length === 0) return;
+
+      const payload = {
+        date: dateStr,
+        week_template_id: template.id,
+        template_day_id: day.id,
+        sessions: day.sessions.map((session: any) => ({
+          session_name: session.session_name,
+          session_order: session.session_order,
+          notes: session.notes || null,
+          exercises: (session.exercises || []).map((exercise: any) => {
+            const hasSet3 = exercise.set_03_rep || exercise.weight_03;
+            const hasSet2 = exercise.set_02_rep || exercise.weight_02;
+            const hasSet1 = exercise.set_01_rep || exercise.weight_01;
+            const computedSets = hasSet3 ? 3 : hasSet2 ? 2 : hasSet1 ? 1 : null;
+            return {
+              exercise_template_id: exercise.exercise_template_id || null,
+              exercise_name: exercise.exercise_name,
+              exercise_order: exercise.exercise_order || 0,
+              sets: exercise.sets || computedSets,
+              reps: exercise.reps || exercise.set_01_rep || null,
+              duration: exercise.duration || null,
+              weight: exercise.weight || exercise.weight_01 || null,
+              weight_unit: exercise.weight_unit || null,
+              set_01_rep: exercise.set_01_rep || null,
+              weight_01: exercise.weight_01 || null,
+              set_02_rep: exercise.set_02_rep || null,
+              weight_02: exercise.weight_02 || null,
+              set_03_rep: exercise.set_03_rep || null,
+              weight_03: exercise.weight_03 || null,
+              rest_seconds: exercise.rest_seconds || null,
+              notes: exercise.notes || null,
+            };
+          }),
+        })),
+        client_id: selectedClient || undefined,
+      };
+
+      const created = await fitnessApi.createCalendarEntry(payload);
+      if (created.entry?.sessions?.length > 0) {
+        setNeedsSessionSetup(false);
+        setSelectedSession({
+          ...created.entry.sessions[0],
+          date: dateStr,
+          calendar_entry_id: created.entry.id,
+        });
+      }
+    } catch (fallbackError) {
+      console.error("Failed to build session from template:", fallbackError);
+    }
+  };
+
+  const handleAddSessionAdhoc = async () => {
+    if (!date) return;
+    const sessionName = prompt("Session name (e.g., Morning, Evening):");
+    if (!sessionName) return;
+    try {
+      const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+      const entry = entryRes.entry;
+      const existingSessions = entry?.sessions || [];
+      const maxOrder = existingSessions.reduce((max: number, s: any) => Math.max(max, s.session_order || 0), -1);
+      const newSession = {
+        session_name: sessionName,
+        session_order: maxOrder + 1,
+        notes: null,
+        exercises: [],
+      };
+      const payload = {
+        date,
+        week_template_id: entry?.week_template_id || null,
+        template_day_id: entry?.template_day_id || null,
+        is_override: true,
+        sessions: [...existingSessions, newSession],
+        client_id: selectedClient || undefined,
+      };
+      const created = await fitnessApi.createCalendarEntry(payload);
+      const createdSessions = created.entry?.sessions || [];
+      const createdSession = createdSessions.find((s: any) =>
+        s.session_name === sessionName && s.session_order === newSession.session_order
+      ) || createdSessions[createdSessions.length - 1];
+      if (createdSession) {
+        setSelectedSession({ ...createdSession, date, calendar_entry_id: created.entry?.id });
+        setNeedsSessionSetup(false);
+      }
+    } catch (error) {
+      console.error("Failed to add session:", error);
     }
   };
 
@@ -195,25 +263,35 @@ const FitnessPage: React.FC = () => {
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Overview", icon: <Target className="h-4 w-4" /> },
-    { id: "weekly", label: "Weekly Plan", icon: <Layout className="h-4 w-4" /> },
+    { id: "weekly", label: "Template", icon: <Layout className="h-4 w-4" /> },
     { id: "calendar", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
-    { id: "library", label: "Exercise Library", icon: <BookOpen className="h-4 w-4" /> },
+    { id: "library", label: "Library", icon: <BookOpen className="h-4 w-4" /> },
   ];
 
   // If we have a date param, show session detail
   if (date && selectedSession) {
     return (
       <div className="space-y-4">
-        <button
-          onClick={() => {
-            setSelectedSession(null);
-            setActiveTab("calendar");
-            window.history.pushState({}, "", "/app/fitness");
-          }}
-          className="btn-secondary"
-        >
-          ← Back to Calendar
-        </button>
+        <div className="grid grid-cols-2 gap-2 w-full">
+          <button
+            onClick={() => {
+              setSelectedSession(null);
+              setActiveTab("calendar");
+              navigate("/app/fitness");
+            }}
+            className="btn-secondary w-full flex items-center justify-center h-9 truncate"
+            title="Back to Calendar"
+          >
+            ← Back to Calendar
+          </button>
+          <button
+            onClick={handleAddSessionAdhoc}
+            className="btn-secondary text-xs flex items-center justify-center gap-1 w-full h-9 truncate"
+            title="Add session"
+          >
+            + Session
+          </button>
+        </div>
         <SessionDetail
           date={date}
           session={selectedSession}
@@ -224,23 +302,93 @@ const FitnessPage: React.FC = () => {
     );
   }
 
+  if (date && !selectedSession) {
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2 w-full">
+          <button
+            onClick={() => {
+              setSelectedSession(null);
+              setActiveTab("calendar");
+              navigate("/app/fitness");
+            }}
+            className="btn-secondary w-full flex items-center justify-center h-9 truncate"
+            title="Back to Calendar"
+          >
+            ← Back to Calendar
+          </button>
+          <button
+            onClick={handleAddSessionAdhoc}
+            className="btn-secondary text-xs flex items-center justify-center gap-1 w-full h-9 truncate"
+            title="Add session"
+          >
+            + Session
+          </button>
+        </div>
+        {needsSessionSetup && (
+          <div className="card p-4">
+            <h3 className="font-semibold mb-2">Set up this day</h3>
+            <p className="text-xs text-gray-400 mb-4">
+              Choose a weekly template to track planned sessions or add sessions/exercises ad-hoc.
+            </p>
+            <div className="space-y-3">
+              <SelectDropdown
+                value={calendarTemplateId}
+                options={templateOptions}
+                onChange={(value) => {
+                  setCalendarTemplateId(value);
+                  if (value) {
+                    localStorage.setItem("calendar-template-id", value);
+                  } else {
+                    localStorage.removeItem("calendar-template-id");
+                  }
+                }}
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  className="btn-primary w-full"
+                  onClick={() => createSessionFromTemplate(date)}
+                >
+                  Use weekly template
+                </button>
+                <button
+                  className="btn-secondary w-full"
+                  onClick={handleAddSessionAdhoc}
+                >
+                  Add ad-hoc session
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {!needsSessionSetup && (
+          <div className="card p-4">
+            <p className="text-sm text-gray-400">No session selected.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 overflow-x-hidden">
       {/* Tabs */}
       <div className="card p-2">
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="grid grid-cols-4 gap-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition ${
+              className={`flex flex-col items-center justify-center gap-1 px-2 sm:px-4 py-2 rounded-lg whitespace-nowrap transition ${
                 activeTab === tab.id
                   ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
                   : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
               }`}
             >
               {tab.icon}
-              {tab.label}
+              <span className="max-w-[70px] sm:max-w-[140px] truncate text-[11px] sm:text-sm">
+                {tab.label}
+              </span>
             </button>
           ))}
         </div>
@@ -267,26 +415,20 @@ const FitnessPage: React.FC = () => {
         <div className="space-y-3">
           <div className="card p-3 flex flex-col md:flex-row gap-3 md:items-center">
             <div className="text-sm text-gray-400">Weekly Template</div>
-            <select
-              value={calendarTemplateId}
-              onChange={(e) => {
-                const value = e.target.value;
-                setCalendarTemplateId(value);
-                if (value) {
-                  localStorage.setItem("calendar-template-id", value);
-                } else {
-                  localStorage.removeItem("calendar-template-id");
-                }
-              }}
-              className="input-field md:w-96"
-            >
-              <option value="">Latest template</option>
-              {weekTemplates.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
+            <div className="md:w-96 w-full">
+              <SelectDropdown
+                value={calendarTemplateId}
+                options={templateOptions}
+                onChange={(value) => {
+                  setCalendarTemplateId(value);
+                  if (value) {
+                    localStorage.setItem("calendar-template-id", value);
+                  } else {
+                    localStorage.removeItem("calendar-template-id");
+                  }
+                }}
+              />
+            </div>
           </div>
           <CalendarView selectedClient={selectedClient} viewMode="week" initialDate={date} readOnly={!!selectedClient} />
         </div>

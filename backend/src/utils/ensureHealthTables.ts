@@ -45,6 +45,39 @@ export const ensureHealthTables = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_appointment_attachments_appointment ON appointment_attachments (appointment_id);
       CREATE INDEX IF NOT EXISTS idx_appointment_attachments_type ON appointment_attachments (appointment_id, attachment_type);
+
+      -- Appointment Details
+      CREATE TABLE IF NOT EXISTS appointment_details (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        appointment_id UUID NOT NULL UNIQUE,
+        patient_user_id UUID NOT NULL,
+        history JSONB,
+        prescription JSONB,
+        bills JSONB,
+        audio_clips JSONB,
+        created_by UUID NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_appointment_details_patient ON appointment_details (patient_user_id);
+
+      -- Appointment Files (prescriptions, bills, audio)
+      CREATE TABLE IF NOT EXISTS appointment_files (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        appointment_id UUID NOT NULL,
+        patient_user_id UUID NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        sub_type VARCHAR(50),
+        file_url VARCHAR(500),
+        storage_path VARCHAR(500),
+        file_name VARCHAR(255),
+        file_type VARCHAR(100),
+        file_size INTEGER,
+        created_by UUID NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_appointment_files_appointment ON appointment_files (appointment_id);
+      CREATE INDEX IF NOT EXISTS idx_appointment_files_patient ON appointment_files (patient_user_id);
     `);
     ensured = true;
     console.log('✅ [HEALTH] Health module tables ensured in aarogya_mitra');

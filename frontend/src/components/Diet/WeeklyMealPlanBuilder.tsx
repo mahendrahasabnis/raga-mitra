@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Calendar, Plus, GripVertical, Salad } from "lucide-react";
+import { Plus, Edit, Trash2, Salad, GripVertical } from "lucide-react";
 import { dietApi } from "../../services/api";
+import MealLibrary from "./MealLibrary";
 
 interface WeeklyMealPlanBuilderProps {
   selectedClient?: string | null;
@@ -8,12 +9,6 @@ interface WeeklyMealPlanBuilderProps {
 }
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-const MEAL_TYPES = [
-  { value: "breakfast", label: "Breakfast" },
-  { value: "lunch", label: "Lunch" },
-  { value: "dinner", label: "Dinner" },
-  { value: "snacks", label: "Snacks" },
-];
 
 const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
   selectedClient,
@@ -22,9 +17,24 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
   const [templates, setTemplates] = useState<any[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [showItemForm, setShowItemForm] = useState(false);
+  const [showMealLibrary, setShowMealLibrary] = useState(false);
   const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
-  const [selectedMealId, setSelectedMealId] = useState<string | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [itemEditor, setItemEditor] = useState<{
+    dayIndex: number;
+    sessionId: string;
+    itemIndex: number;
+  } | null>(null);
+  const [itemForm, setItemForm] = useState({
+    quantity: "",
+    calories: "",
+    protein: "",
+    carbs: "",
+    fats: "",
+    fiber: "",
+    sugar: "",
+    sodium: "",
+  });
 
   const fetchTemplateDetails = async (id: string) => {
     try {
@@ -43,7 +53,11 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
     setLoading(true);
     try {
       const res = await dietApi.getWeekTemplates(selectedClient || undefined);
-      setTemplates(res.templates || []);
+      const activeTemplates = (res.templates || []).filter((t: any) => t.is_active !== false);
+      setTemplates(activeTemplates);
+      if (!selectedTemplate && activeTemplates.length > 0) {
+        fetchTemplateDetails(activeTemplates[0].id);
+      }
     } catch (error) {
       console.error("Failed to fetch templates:", error);
     } finally {
@@ -61,7 +75,8 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
         description: "",
         days: DAYS.map((_, index) => ({
           day_of_week: index,
-          meals: [],
+          is_rest_day: false,
+          sessions: [],
         })),
         client_id: selectedClient || undefined,
       };
@@ -77,23 +92,19 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
     }
   };
 
-  const handleAddMeal = async (dayIndex: number) => {
+  const handleAddSession = async (dayIndex: number) => {
     if (!selectedTemplate) return;
-
-    const mealType = prompt("Meal type (breakfast/lunch/dinner/snacks):");
-    if (!mealType) return;
+    const sessionName = prompt("Session name (e.g., Breakfast, Lunch):");
+    if (!sessionName) return;
 
     try {
-      const day = selectedTemplate.days[dayIndex];
-      if (!day) return;
-
       const updatedDays = [...selectedTemplate.days];
-      if (!updatedDays[dayIndex].meals) {
-        updatedDays[dayIndex].meals = [];
+      if (!updatedDays[dayIndex].sessions) {
+        updatedDays[dayIndex].sessions = [];
       }
-      updatedDays[dayIndex].meals.push({
-        meal_type: mealType,
-        meal_order: updatedDays[dayIndex].meals.length,
+      updatedDays[dayIndex].sessions.push({
+        session_name: sessionName,
+        session_order: updatedDays[dayIndex].sessions.length,
         items: [],
       });
 
@@ -110,37 +121,44 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
       }
       onRefresh && onRefresh();
     } catch (error) {
-      console.error("Failed to add meal:", error);
-      alert("Failed to add meal");
+      console.error("Failed to add session:", error);
+      alert("Failed to add session");
     }
   };
 
-  const handleAddItem = (dayIndex: number, mealId: string) => {
-    setSelectedDayIndex(dayIndex);
-    setSelectedMealId(mealId);
-    setShowItemForm(true);
-  };
-
-  const handleItemFormClose = () => {
-    setShowItemForm(false);
+  const handleAddItems = (
+    dayIndex: number | null,
+    sessionId: string | null,
+    mealTemplates: any[]
+  ) => {
+    setShowMealLibrary(false);
     setSelectedDayIndex(null);
-    setSelectedMealId(null);
-  };
+    setSelectedSessionId(null);
 
-  const handleItemSubmit = async (itemData: any) => {
-    if (!selectedTemplate || selectedDayIndex === null || !selectedMealId) return;
+    if (!selectedTemplate || dayIndex === null || !sessionId) return;
 
     const updatedDays = [...selectedTemplate.days];
-    const day = updatedDays[selectedDayIndex];
-    const meal = day.meals.find((m: any) => m.id === selectedMealId);
+    const day = updatedDays[dayIndex];
+    const session = day.sessions.find((s: any) => s.id === sessionId);
 
-    if (meal) {
-      if (!meal.items) {
-        meal.items = [];
+    if (session) {
+      if (!session.items) {
+        session.items = [];
       }
-      meal.items.push({
-        ...itemData,
-        item_order: meal.items.length,
+      mealTemplates.forEach((mealTemplate) => {
+        session.items.push({
+          meal_template_id: mealTemplate.id,
+          food_name: mealTemplate.name,
+          item_order: session.items.length,
+          quantity: mealTemplate.serving_size || null,
+          calories: mealTemplate.calories || null,
+          protein: mealTemplate.protein || null,
+          carbs: mealTemplate.carbs || null,
+          fats: mealTemplate.fats || null,
+          fiber: mealTemplate.fiber || null,
+          sugar: mealTemplate.sugar || null,
+          sodium: mealTemplate.sodium || null,
+        });
       });
 
       const templateData = {
@@ -150,17 +168,108 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
         client_id: selectedClient || undefined,
       };
 
-      try {
-        const res = await dietApi.updateWeekTemplate(selectedTemplate.id, templateData);
+      dietApi.updateWeekTemplate(selectedTemplate.id, templateData).then((res) => {
         if (res.template) {
           setSelectedTemplate(res.template);
         }
         onRefresh && onRefresh();
-        handleItemFormClose();
-      } catch (error) {
-        console.error("Failed to add item:", error);
-        alert("Failed to add item");
+      });
+    }
+  };
+
+  const handleMealLibraryOpen = (dayIndex: number, sessionId: string) => {
+    setSelectedDayIndex(dayIndex);
+    setSelectedSessionId(sessionId);
+    setShowMealLibrary(true);
+  };
+
+  const openItemEditor = (dayIndex: number, sessionId: string, itemIndex: number) => {
+    if (!selectedTemplate) return;
+    const day = selectedTemplate.days?.find((d: any) => d.day_of_week === dayIndex);
+    const session = day?.sessions?.find((s: any) => s.id === sessionId);
+    const item = session?.items?.[itemIndex];
+    if (!item) return;
+    setItemForm({
+      quantity: item.quantity ?? "",
+      calories: item.calories ?? "",
+      protein: item.protein ?? "",
+      carbs: item.carbs ?? "",
+      fats: item.fats ?? "",
+      fiber: item.fiber ?? "",
+      sugar: item.sugar ?? "",
+      sodium: item.sodium ?? "",
+    });
+    setItemEditor({ dayIndex, sessionId, itemIndex });
+  };
+
+  const handleSaveItemSettings = async () => {
+    if (!selectedTemplate || !itemEditor) return;
+    const { dayIndex, sessionId, itemIndex } = itemEditor;
+    const updatedDays = [...selectedTemplate.days];
+    const day = updatedDays[dayIndex];
+    const session = day.sessions.find((s: any) => s.id === sessionId);
+    if (!session) return;
+    const item = session.items?.[itemIndex];
+    if (!item) return;
+
+    session.items[itemIndex] = {
+      ...item,
+      quantity: itemForm.quantity || null,
+      calories: itemForm.calories ? Number(itemForm.calories) : null,
+      protein: itemForm.protein ? Number(itemForm.protein) : null,
+      carbs: itemForm.carbs ? Number(itemForm.carbs) : null,
+      fats: itemForm.fats ? Number(itemForm.fats) : null,
+      fiber: itemForm.fiber ? Number(itemForm.fiber) : null,
+      sugar: itemForm.sugar ? Number(itemForm.sugar) : null,
+      sodium: itemForm.sodium ? Number(itemForm.sodium) : null,
+    };
+
+    const templateData = {
+      name: selectedTemplate.name,
+      description: selectedTemplate.description,
+      days: updatedDays,
+      client_id: selectedClient || undefined,
+    };
+
+    try {
+      const res = await dietApi.updateWeekTemplate(selectedTemplate.id, templateData);
+      if (res.template) {
+        setSelectedTemplate(res.template);
       }
+      setItemEditor(null);
+      onRefresh && onRefresh();
+    } catch (error) {
+      console.error("Failed to update item:", error);
+      alert("Failed to update item");
+    }
+  };
+
+  const handleDeleteItem = async (dayIndex: number, sessionId: string, itemIndex: number) => {
+    if (!selectedTemplate) return;
+    if (!confirm("Delete this item?")) return;
+    const updatedDays = [...selectedTemplate.days];
+    const day = updatedDays[dayIndex];
+    const session = day.sessions.find((s: any) => s.id === sessionId);
+    if (!session) return;
+    session.items.splice(itemIndex, 1);
+    session.items = session.items.map((item: any, idx: number) => ({
+      ...item,
+      item_order: idx,
+    }));
+    const templateData = {
+      name: selectedTemplate.name,
+      description: selectedTemplate.description,
+      days: updatedDays,
+      client_id: selectedClient || undefined,
+    };
+    try {
+      const res = await dietApi.updateWeekTemplate(selectedTemplate.id, templateData);
+      if (res.template) {
+        setSelectedTemplate(res.template);
+      }
+      onRefresh && onRefresh();
+    } catch (error) {
+      console.error("Failed to delete item:", error);
     }
   };
 
@@ -172,18 +281,17 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
     );
   }
 
-  if (showItemForm && selectedDayIndex !== null && selectedMealId) {
+  if (showMealLibrary && selectedDayIndex !== null && selectedSessionId) {
     return (
-      <MealItemForm
-        onClose={handleItemFormClose}
-        onSubmit={handleItemSubmit}
+      <MealLibrary
+        selectedClient={selectedClient}
+        onSelectMultiple={(templates) => handleAddItems(selectedDayIndex, selectedSessionId, templates)}
       />
     );
   }
 
   return (
     <div className="space-y-4 overflow-x-hidden">
-      {/* Template Selection */}
       <div className="card p-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold">Weekly Meal Templates</h3>
@@ -198,202 +306,193 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
         {templates.length === 0 ? (
           <p className="text-sm text-gray-400">No templates yet. Create one to get started.</p>
         ) : (
-          <select
-            value={selectedTemplate?.id || ""}
-            onChange={(e) => {
-              const template = templates.find((t) => t.id === e.target.value);
-              if (template) {
-                fetchTemplateDetails(template.id);
-              }
-            }}
-            className="input-field w-full"
-          >
-            <option value="">Select a template...</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
+          <div className="space-y-3">
+            {templates.map((template) => (
+              <div
+                key={template.id}
+                className={`p-3 rounded-lg cursor-pointer transition ${
+                  selectedTemplate?.id === template.id
+                    ? "bg-blue-500/20 border border-blue-400/30"
+                    : "bg-white/5 hover:bg-white/10"
+                }`}
+                onClick={() => fetchTemplateDetails(template.id)}
+              >
+                <div className="flex items-center gap-2">
+                  <Salad className="h-4 w-4 text-emerald-300" />
+                  <div>
+                    <p className="font-medium">{template.name}</p>
+                    {template.description && (
+                      <p className="text-xs text-gray-400">{template.description}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             ))}
-          </select>
+          </div>
         )}
       </div>
 
-      {/* Template Builder */}
       {selectedTemplate && (
         <div className="space-y-4">
-          <div className="card p-4">
-            <h3 className="font-semibold mb-4">{selectedTemplate.name}</h3>
+          {DAYS.map((day, dayIndex) => {
+            const dayData = selectedTemplate.days?.find((d: any) => d.day_of_week === dayIndex);
+            const sessions = dayData?.sessions || [];
 
-            <div className="space-y-4">
-              {DAYS.map((dayName, dayIndex) => {
-                const day = selectedTemplate.days?.find((d: any) => d.day_of_week === dayIndex);
+            return (
+              <div key={dayIndex} className="card p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="font-semibold">{day}</h4>
+                  {!selectedClient && (
+                    <button
+                      onClick={() => handleAddSession(dayIndex)}
+                      className="btn-secondary flex items-center gap-2"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Session
+                    </button>
+                  )}
+                </div>
 
-                return (
-                  <div key={dayIndex} className="border border-white/10 rounded-lg p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="font-medium">{dayName}</h4>
-                    </div>
-
-                    <div className="space-y-3">
-                      {day?.meals?.map((meal: any) => (
-                        <div key={meal.id} className="bg-white/5 rounded-lg p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <h5 className="font-medium text-sm">
-                              {MEAL_TYPES.find((mt) => mt.value === meal.meal_type)?.label || meal.meal_type}
-                            </h5>
-                            {!selectedClient && (
-                              <button
-                                onClick={() => handleAddItem(dayIndex, meal.id)}
-                                className="text-xs btn-secondary"
-                              >
-                                Add Item
-                              </button>
-                            )}
+                {sessions.length === 0 ? (
+                  <p className="text-sm text-gray-400">No sessions planned</p>
+                ) : (
+                  <div className="space-y-3">
+                    {sessions.map((session: any, sessionIndex: number) => (
+                      <div key={session.id || sessionIndex} className="p-3 bg-white/5 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <GripVertical className="h-4 w-4 text-gray-400" />
+                            <span className="font-medium">{session.session_name}</span>
                           </div>
-
-                          {meal.items?.length > 0 ? (
-                            <div className="space-y-2">
-                              {meal.items.map((item: any, idx: number) => (
-                                <div
-                                  key={item.id || idx}
-                                  className="flex items-center justify-between p-2 bg-white/5 rounded text-sm"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <GripVertical className="h-4 w-4 text-gray-400" />
-                                    <span>{item.food_name}</span>
-                                    {item.quantity && <span className="text-gray-400">({item.quantity})</span>}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-gray-400">No items yet</p>
+                          {!selectedClient && (
+                            <button
+                              onClick={() => handleMealLibraryOpen(dayIndex, session.id)}
+                              className="btn-secondary text-xs"
+                            >
+                              Add Items
+                            </button>
                           )}
                         </div>
-                      ))}
 
-                      {!selectedClient && (
-                        <button
-                          onClick={() => handleAddMeal(dayIndex)}
-                          className="text-xs btn-secondary w-full"
-                        >
-                          + Add Meal
-                        </button>
-                      )}
-                    </div>
+                        {session.items && session.items.length > 0 && (
+                          <div className="space-y-2 pl-6">
+                            {session.items.map((item: any, idx: number) => (
+                              <div key={item.id || idx} className="p-2 bg-white/5 rounded text-sm">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-medium">{item.food_name}</span>
+                                  {item.quantity && (
+                                    <span className="text-gray-400 text-xs">{item.quantity}</span>
+                                  )}
+                                </div>
+                                <div className="flex gap-3 text-xs text-gray-400 mt-1">
+                                  {item.calories && <span>{item.calories} cal</span>}
+                                  {item.protein && <span>{item.protein}g protein</span>}
+                                  {item.carbs && <span>{item.carbs}g carbs</span>}
+                                  {item.fats && <span>{item.fats}g fats</span>}
+                                </div>
+                                {!selectedClient && (
+                                  <div className="flex gap-2 mt-2">
+                                    <button
+                                      onClick={() => openItemEditor(dayIndex, session.id, idx)}
+                                      className="btn-secondary p-1"
+                                    >
+                                      <Edit className="h-3 w-3" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteItem(dayIndex, session.id, idx)}
+                                      className="btn-secondary p-1"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                );
-              })}
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {itemEditor && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="card max-w-lg w-full p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Edit Meal Item</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                value={itemForm.quantity}
+                onChange={(e) => setItemForm({ ...itemForm, quantity: e.target.value })}
+                className="input-field"
+                placeholder="Quantity"
+              />
+              <input
+                type="number"
+                value={itemForm.calories}
+                onChange={(e) => setItemForm({ ...itemForm, calories: e.target.value })}
+                className="input-field"
+                placeholder="Calories"
+              />
+              <input
+                type="number"
+                value={itemForm.protein}
+                onChange={(e) => setItemForm({ ...itemForm, protein: e.target.value })}
+                className="input-field"
+                placeholder="Protein (g)"
+              />
+              <input
+                type="number"
+                value={itemForm.carbs}
+                onChange={(e) => setItemForm({ ...itemForm, carbs: e.target.value })}
+                className="input-field"
+                placeholder="Carbs (g)"
+              />
+              <input
+                type="number"
+                value={itemForm.fats}
+                onChange={(e) => setItemForm({ ...itemForm, fats: e.target.value })}
+                className="input-field"
+                placeholder="Fats (g)"
+              />
+              <input
+                type="number"
+                value={itemForm.fiber}
+                onChange={(e) => setItemForm({ ...itemForm, fiber: e.target.value })}
+                className="input-field"
+                placeholder="Fiber (g)"
+              />
+              <input
+                type="number"
+                value={itemForm.sugar}
+                onChange={(e) => setItemForm({ ...itemForm, sugar: e.target.value })}
+                className="input-field"
+                placeholder="Sugar (g)"
+              />
+              <input
+                type="number"
+                value={itemForm.sodium}
+                onChange={(e) => setItemForm({ ...itemForm, sodium: e.target.value })}
+                className="input-field"
+                placeholder="Sodium (mg)"
+              />
+            </div>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setItemEditor(null)} className="btn-secondary">
+                Cancel
+              </button>
+              <button onClick={handleSaveItemSettings} className="btn-primary">
+                Save
+              </button>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-// Simple inline form for adding meal items
-const MealItemForm: React.FC<{ onClose: () => void; onSubmit: (data: any) => void }> = ({
-  onClose,
-  onSubmit,
-}) => {
-  const [formData, setFormData] = useState({
-    food_name: "",
-    quantity: "",
-    calories: "",
-    protein: "",
-    carbs: "",
-    fats: "",
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit({
-      food_name: formData.food_name,
-      quantity: formData.quantity || null,
-      calories: formData.calories ? parseFloat(formData.calories) : null,
-      protein: formData.protein ? parseFloat(formData.protein) : null,
-      carbs: formData.carbs ? parseFloat(formData.carbs) : null,
-      fats: formData.fats ? parseFloat(formData.fats) : null,
-    });
-  };
-
-  return (
-    <div className="space-y-4 overflow-x-hidden">
-      <button onClick={onClose} className="btn-secondary">
-        ← Back to Builder
-      </button>
-      <div className="card p-4">
-        <h3 className="font-semibold mb-4">Add Food Item</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2">Food Name *</label>
-            <input
-              type="text"
-              value={formData.food_name}
-              onChange={(e) => setFormData({ ...formData, food_name: e.target.value })}
-              className="input-field w-full"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-2">Quantity</label>
-            <input
-              type="text"
-              value={formData.quantity}
-              onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-              className="input-field w-full"
-              placeholder="e.g., 1 cup, 200g"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium mb-2">Calories</label>
-              <input
-                type="number"
-                value={formData.calories}
-                onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
-                className="input-field w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Protein (g)</label>
-              <input
-                type="number"
-                value={formData.protein}
-                onChange={(e) => setFormData({ ...formData, protein: e.target.value })}
-                className="input-field w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Carbs (g)</label>
-              <input
-                type="number"
-                value={formData.carbs}
-                onChange={(e) => setFormData({ ...formData, carbs: e.target.value })}
-                className="input-field w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Fats (g)</label>
-              <input
-                type="number"
-                value={formData.fats}
-                onChange={(e) => setFormData({ ...formData, fats: e.target.value })}
-                className="input-field w-full"
-              />
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1">
-              Cancel
-            </button>
-            <button type="submit" className="btn-primary flex-1">
-              Add Item
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 };

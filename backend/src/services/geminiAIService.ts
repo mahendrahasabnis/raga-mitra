@@ -90,6 +90,21 @@ export interface ExtractedTestResultData {
   confidence?: number;
 }
 
+export interface ExtractedAudioSummary {
+  summary?: string;
+  categories?: string[];
+  key_points?: string[];
+  chief_complaint?: string;
+  vitals?: {
+    weight?: string;
+    height?: string;
+    blood_pressure?: string;
+    oxygen_saturation?: string;
+  };
+  advice?: string;
+  confidence?: number;
+}
+
 /**
  * Download file from URL and convert to base64
  */
@@ -137,6 +152,37 @@ async function downloadFileAsBase64(fileUrl: string): Promise<{ mimeType: string
 /**
  * Parse document using Gemini Vision API - accepts base64 data directly
  */
+const getGeminiModelName = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+const parseGeminiJson = (text: string) => {
+  let jsonText = text.trim();
+  if (jsonText.startsWith('```json')) {
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  } else if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/```\n?/g, '').trim();
+  }
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    const start = jsonText.indexOf('{');
+    if (start === -1) return { raw_text: text, json_parse_error: true };
+    let depth = 0;
+    for (let i = start; i < jsonText.length; i += 1) {
+      if (jsonText[i] === '{') depth += 1;
+      if (jsonText[i] === '}') depth -= 1;
+      if (depth === 0) {
+        const candidate = jsonText.slice(start, i + 1);
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          break;
+        }
+      }
+    }
+    return { raw_text: text, json_parse_error: true };
+  }
+};
+
 async function parseDocumentFromBase64(base64Data: string, prompt: string, mimeType: string): Promise<any> {
   try {
     if (!GEMINI_API_KEY) {
@@ -148,7 +194,8 @@ async function parseDocumentFromBase64(base64Data: string, prompt: string, mimeT
       base64Length: base64Data.length
     });
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const modelName = getGeminiModelName();
+    const model = genAI.getGenerativeModel({ model: modelName });
     
     const result = await model.generateContent([
       prompt,
@@ -165,30 +212,68 @@ async function parseDocumentFromBase64(base64Data: string, prompt: string, mimeT
     
     console.log('📄 [GEMINI AI] Raw response received:', text.substring(0, 200) + '...');
     
-    // Try to extract JSON from the response (Gemini sometimes wraps it in markdown)
-    let jsonText = text.trim();
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/```\n?/g, '').trim();
-    }
-    
-    // Parse JSON response
-    try {
-      const parsed = JSON.parse(jsonText);
-      console.log('✅ [GEMINI AI] Successfully parsed JSON response');
-      return parsed;
-    } catch (parseError: any) {
-      // If not JSON, return as text and let the caller parse it
-      console.warn('⚠️ [GEMINI AI] Response is not valid JSON:', parseError.message);
+    const parsed = parseGeminiJson(text);
+    if (parsed.json_parse_error) {
+      console.warn('⚠️ [GEMINI AI] Response is not valid JSON');
       console.warn('⚠️ [GEMINI AI] Response text:', text.substring(0, 500));
-      return { raw_text: text, json_parse_error: true };
+      return { ...parsed, model: modelName };
     }
+    console.log('✅ [GEMINI AI] Successfully parsed JSON response');
+    return parsed;
   } catch (error: any) {
     console.error('❌ [GEMINI AI] Error parsing document:', error.message);
     console.error('❌ [GEMINI AI] Error stack:', error.stack);
     throw error;
+  }
+}
+
+async function parseAudioFromBase64(base64Data: string, prompt: string, mimeType: string): Promise<any> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+  const model = genAI.getGenerativeModel({ model: getGeminiModelName() });
+  const result = await model.generateContent([
+    prompt,
+    {
+      inlineData: {
+        mimeType: mimeType || 'audio/webm',
+        data: base64Data,
+      },
+    },
+  ]);
+  const response = await result.response;
+  const text = response.text();
+  let jsonText = text.trim();
+  if (jsonText.startsWith('```json')) {
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  } else if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/```\n?/g, '').trim();
+  }
+  try {
+    return JSON.parse(jsonText);
+  } catch (parseError) {
+    return { raw_text: text, json_parse_error: true };
+  }
+}
+
+async function parseText(prompt: string): Promise<any> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+  const model = genAI.getGenerativeModel({ model: getGeminiModelName() });
+  const result = await model.generateContent([prompt]);
+  const response = await result.response;
+  const text = response.text();
+  let jsonText = text.trim();
+  if (jsonText.startsWith('```json')) {
+    jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  } else if (jsonText.startsWith('```')) {
+    jsonText = jsonText.replace(/```\n?/g, '').trim();
+  }
+  try {
+    return JSON.parse(jsonText);
+  } catch (parseError) {
+    return { raw_text: text, json_parse_error: true };
   }
 }
 
@@ -201,7 +286,8 @@ async function parseDocument(fileUrl: string, prompt: string, fileType?: string)
       throw new Error('GEMINI_API_KEY not configured');
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const modelName = getGeminiModelName();
+    const model = genAI.getGenerativeModel({ model: modelName });
     
     // Download file and convert to base64
     const fileData = await downloadFileAsBase64(fileUrl);
@@ -219,26 +305,101 @@ async function parseDocument(fileUrl: string, prompt: string, fileType?: string)
     const response = await result.response;
     const text = response.text();
     
-    // Try to extract JSON from the response (Gemini sometimes wraps it in markdown)
-    let jsonText = text.trim();
-    // Remove markdown code blocks if present
-    if (jsonText.startsWith('```json')) {
-      jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    } else if (jsonText.startsWith('```')) {
-      jsonText = jsonText.replace(/```\n?/g, '').trim();
-    }
-    
-    // Parse JSON response
-    try {
-      return JSON.parse(jsonText);
-    } catch (parseError) {
-      // If not JSON, return as text and let the caller parse it
+    const parsed = parseGeminiJson(text);
+    if (parsed.json_parse_error) {
       console.warn('⚠️ [GEMINI AI] Response is not valid JSON, returning as text');
-      return { raw_text: text, json_parse_error: true };
+      return { ...parsed, model: modelName };
     }
+    return parsed;
   } catch (error: any) {
     console.error('❌ [GEMINI AI] Error parsing document:', error.message);
     throw error;
+  }
+}
+
+export async function detectDocumentTypeFromBase64(
+  base64Data: string,
+  fileType: string
+): Promise<{ document_type: 'prescription' | 'receipt'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other'; confidence: number }> {
+  const prompt = `
+Classify this medical document into one of:
+- prescription
+- receipt
+
+If receipt, determine receipt_type:
+- consultation
+- medicine
+- test
+- other
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "document_type": "prescription|receipt",
+  "receipt_type": "consultation|medicine|test|other" (only for receipt),
+  "confidence": 0.0-1.0
+}
+`;
+
+  try {
+    const extracted = await parseDocumentFromBase64(base64Data, prompt, fileType);
+    if (extracted.json_parse_error) {
+      return { document_type: 'receipt', receipt_type: 'other', confidence: 0.2 };
+    }
+    const docType = extracted.document_type === 'prescription' ? 'prescription' : 'receipt';
+    const receiptType = ['consultation', 'medicine', 'test', 'other'].includes(extracted.receipt_type)
+      ? extracted.receipt_type
+      : 'other';
+    return {
+      document_type: docType,
+      receipt_type: docType === 'receipt' ? receiptType : undefined,
+      confidence: extracted.confidence || 0.6
+    };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] Error detecting document type:', error.message);
+    return { document_type: 'receipt', receipt_type: 'other', confidence: 0 };
+  }
+}
+
+export async function detectDocumentType(
+  fileUrl: string,
+  fileType: string
+): Promise<{ document_type: 'prescription' | 'receipt'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other'; confidence: number }> {
+  const prompt = `
+Classify this medical document into one of:
+- prescription
+- receipt
+
+If receipt, determine receipt_type:
+- consultation
+- medicine
+- test
+- other
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "document_type": "prescription|receipt",
+  "receipt_type": "consultation|medicine|test|other" (only for receipt),
+  "confidence": 0.0-1.0
+}
+`;
+
+  try {
+    const extracted = await parseDocument(fileUrl, prompt, fileType);
+    if (extracted.json_parse_error) {
+      return { document_type: 'receipt', receipt_type: 'other', confidence: 0.2 };
+    }
+    const docType = extracted.document_type === 'prescription' ? 'prescription' : 'receipt';
+    const receiptType = ['consultation', 'medicine', 'test', 'other'].includes(extracted.receipt_type)
+      ? extracted.receipt_type
+      : 'other';
+    return {
+      document_type: docType,
+      receipt_type: docType === 'receipt' ? receiptType : undefined,
+      confidence: extracted.confidence || 0.6
+    };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] Error detecting document type:', error.message);
+    return { document_type: 'receipt', receipt_type: 'other', confidence: 0 };
   }
 }
 
@@ -285,7 +446,9 @@ Extract all medication information you can find. If any field is not found, use 
       console.warn('⚠️ [GEMINI AI] Failed to parse JSON, returning empty structure');
       return {
         confidence: 0.3,
-      };
+        raw_text: extracted.raw_text,
+        model: extracted.model
+      } as any;
     }
     
     return {
@@ -349,7 +512,9 @@ Extract all medication information you can find. If any field is not found, use 
       console.warn('⚠️ [GEMINI AI] Failed to parse JSON, returning empty structure');
       return {
         confidence: 0.3,
-      };
+        raw_text: extracted.raw_text,
+        model: extracted.model
+      } as any;
     }
     
     return {
@@ -431,7 +596,9 @@ If any field is not found, use empty string for text, empty array for arrays, nu
       return {
         receipt_type: receiptType,
         confidence: 0.3,
-      };
+        raw_text: extracted.raw_text,
+        model: extracted.model
+      } as any;
     }
     
     return {
@@ -531,7 +698,9 @@ If any field is not found, use empty string for text, empty array for arrays, nu
       return {
         receipt_type: receiptType,
         confidence: 0.3,
-      };
+        raw_text: extracted.raw_text,
+        model: extracted.model
+      } as any;
     }
     
     return {
@@ -568,6 +737,94 @@ If any field is not found, use empty string for text, empty array for arrays, nu
       receipt_type: receiptType,
       confidence: 0,
     };
+  }
+}
+
+export async function summarizeAppointmentAudioFromBase64(
+  base64Data: string,
+  fileType: string
+): Promise<ExtractedAudioSummary> {
+  const prompt = `You are a medical scribe assistant. Listen to the audio and extract structured notes.
+Return ONLY valid JSON with this shape:
+{
+  "summary": "Short visit summary",
+  "categories": ["History", "Vitals", "Advice", "Prescription", "Diagnostics", "Billing", "Other"],
+  "key_points": ["point 1", "point 2"],
+  "chief_complaint": "text or empty string",
+  "vitals": {
+    "weight": "value or empty string",
+    "height": "value or empty string",
+    "blood_pressure": "value or empty string",
+    "oxygen_saturation": "value or empty string"
+  },
+  "advice": "doctor advice text or empty string",
+  "confidence": 0.0
+}
+If any field is unknown, use empty string or empty arrays. Return only JSON.`;
+
+  try {
+    const extracted = await parseAudioFromBase64(base64Data, prompt, fileType || 'audio/webm');
+    if (extracted.json_parse_error) {
+      return { summary: '', categories: [], confidence: 0.2 };
+    }
+    return {
+      summary: extracted.summary || '',
+      categories: extracted.categories || [],
+      key_points: extracted.key_points || [],
+      chief_complaint: extracted.chief_complaint || '',
+      vitals: extracted.vitals || {},
+      advice: extracted.advice || '',
+      confidence: extracted.confidence || 0.6,
+    };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] Error summarizing audio:', error.message);
+    return { summary: '', categories: [], confidence: 0 };
+  }
+}
+
+export async function summarizeAppointmentText(
+  transcript: string
+): Promise<ExtractedAudioSummary> {
+  const prompt = `You are a medical scribe assistant. Analyze this transcript and extract structured notes.
+Transcript:
+"""
+${transcript}
+"""
+
+Return ONLY valid JSON with this shape:
+{
+  "summary": "Short visit summary",
+  "categories": ["History", "Vitals", "Advice", "Prescription", "Diagnostics", "Billing", "Other"],
+  "key_points": ["point 1", "point 2"],
+  "chief_complaint": "text or empty string",
+  "vitals": {
+    "weight": "value or empty string",
+    "height": "value or empty string",
+    "blood_pressure": "value or empty string",
+    "oxygen_saturation": "value or empty string"
+  },
+  "advice": "doctor advice text or empty string",
+  "confidence": 0.0
+}
+If any field is unknown, use empty string or empty arrays. Return only JSON.`;
+
+  try {
+    const extracted = await parseText(prompt);
+    if (extracted.json_parse_error) {
+      return { summary: '', categories: [], confidence: 0.2 };
+    }
+    return {
+      summary: extracted.summary || '',
+      categories: extracted.categories || [],
+      key_points: extracted.key_points || [],
+      chief_complaint: extracted.chief_complaint || '',
+      vitals: extracted.vitals || {},
+      advice: extracted.advice || '',
+      confidence: extracted.confidence || 0.6,
+    };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] Error summarizing text:', error.message);
+    return { summary: '', categories: [], confidence: 0 };
   }
 }
 
@@ -627,14 +884,14 @@ IMPORTANT:
 
   try {
     const extracted = await parseDocumentFromBase64(base64Data, prompt, fileType);
-    
+
     if (extracted.json_parse_error) {
       console.warn('⚠️ [GEMINI AI] Failed to parse JSON, returning empty structure');
       return {
         confidence: 0.3,
       };
     }
-    
+
     return {
       test_name: extracted.test_name || '',
       test_category: extracted.test_category || '',

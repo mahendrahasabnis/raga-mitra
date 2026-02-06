@@ -1,6 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { Scan, Upload, X, Loader, CheckCircle, AlertCircle, FileText } from 'lucide-react';
 import { medicalHistoryApi } from '../../services/api';
+import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min?url";
+
+GlobalWorkerOptions.workerSrc = pdfWorker;
 
 interface ReceiptScanSectionProps {
   onDataExtracted: (extractedData: any) => void;
@@ -11,10 +15,38 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
   const [file, setFile] = useState<File | null>(null);
   const [fileUrl, setFileUrl] = useState<string>('');
   const [extractedData, setExtractedData] = useState<any>(null);
+  const [detectedType, setDetectedType] = useState<string>("");
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [previewBase64, setPreviewBase64] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [fileBase64, setFileBase64] = useState<string>('');
+
+  const renderPdfFirstPage = async (pdfFile: File): Promise<Blob> => {
+    const buffer = await pdfFile.arrayBuffer();
+    const pdf = await getDocument({ data: new Uint8Array(buffer) }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 1.5 });
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not supported");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const blob = await new Promise<Blob>((resolve) =>
+      canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.8)
+    );
+    return blob;
+  };
+
+  const blobToBase64 = (blob: Blob) =>
+    new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -22,6 +54,9 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
       setFile(selectedFile);
       setError(null);
       setExtractedData(null);
+      setDetectedType("");
+      setPreviewUrl("");
+      setPreviewBase64("");
       
       // Read file as base64 for sending to backend
       const reader = new FileReader();
@@ -36,6 +71,26 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
         setError('Failed to read file. Please try again.');
       };
       reader.readAsDataURL(selectedFile);
+
+      if (selectedFile.type === 'application/pdf') {
+        renderPdfFirstPage(selectedFile)
+          .then((blob) => blobToBase64(blob))
+          .then((base64) => {
+            setPreviewBase64(base64);
+            setPreviewUrl(`data:image/jpeg;base64,${base64}`);
+          })
+          .catch(() => {
+            setError('Failed to render PDF preview.');
+          });
+      } else if (selectedFile.type.startsWith('image/')) {
+        const imageReader = new FileReader();
+        imageReader.onload = () => {
+          const result = imageReader.result as string;
+          setPreviewUrl(result);
+          setPreviewBase64(result.split(',')[1] || "");
+        };
+        imageReader.readAsDataURL(selectedFile);
+      }
     }
   };
 
@@ -55,11 +110,19 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
 
     try {
       // Send file as base64 data directly (without data URL prefix)
+      let extractionBase64 = previewBase64 || fileBase64;
+      let extractionType = file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+
+      if (extractionType === 'application/pdf') {
+        const previewBlob = await renderPdfFirstPage(file);
+        extractionBase64 = await blobToBase64(previewBlob);
+        extractionType = 'image/jpeg';
+      }
+
       const receiptData = {
-        file_base64: fileBase64, // Pure base64 without data:image/jpeg;base64, prefix
+        file_base64: extractionBase64, // Pure base64 without data:image/jpeg;base64, prefix
         file_name: file.name,
-        file_type: file.type || (file.name.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg'),
-        receipt_type: 'consultation',
+        file_type: extractionType,
         use_ai_extraction: true
       };
 
@@ -70,11 +133,14 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
         base64Length: fileBase64.length
       });
       
-      const response = await medicalHistoryApi.extractReceiptData(receiptData);
+      const response = await medicalHistoryApi.extractDocumentData(receiptData);
       
       console.log('✅ Extraction response:', response);
 
       if (response.extracted_data) {
+        const docType = response.document_type || response.detection?.document_type || '';
+        const receiptType = response.receipt_type || response.detection?.receipt_type || '';
+        setDetectedType([docType, receiptType].filter(Boolean).join(" / "));
         setExtractedData(response.extracted_data);
         onDataExtracted(response.extracted_data);
       } else {
@@ -166,6 +232,24 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
             </>
           )}
         </button>
+      )}
+
+      {previewUrl && !extractedData && (
+        <div className="mt-4">
+          <p className="text-xs text-gray-500 mb-2">Preview</p>
+          <img src={previewUrl} alt="Document preview" className="w-full border border-gray-200 rounded-lg" />
+        </div>
+      )}
+
+      {extractedData && (
+        <div className="mt-4 text-xs text-gray-600">
+          {detectedType && (
+            <p className="mb-2">Detected: {detectedType}</p>
+          )}
+          <pre className="bg-white border border-gray-200 rounded-md p-3 overflow-x-auto">
+            {JSON.stringify(extractedData, null, 2)}
+          </pre>
+        </div>
       )}
 
       {/* Extracted Data Preview */}

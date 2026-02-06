@@ -18,6 +18,10 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [extractedVitals, setExtractedVitals] = useState<any[]>([]);
+  const [lastReportId, setLastReportId] = useState<string | null>(null);
+  const [reportDetails, setReportDetails] = useState<any>(null);
+  const [showReportDetails, setShowReportDetails] = useState(false);
+  const [loadingReportDetails, setLoadingReportDetails] = useState(false);
   const [formData, setFormData] = useState({
     test_name: "",
     test_category: "",
@@ -61,7 +65,10 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
       const uploadRes = await healthApi.uploadReport({
         file_url: formData.file_url,
         file_name: formData.file_name || "report.pdf",
+        file_type: formData.file_type || undefined,
+        client_id: clientId,
       });
+      setLastReportId(uploadRes.report?.id || null);
 
       // Extract vitals
       const extractRes = await healthApi.extractReport(uploadRes.report.id);
@@ -93,7 +100,28 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
     }
   };
 
+  const handleViewReportDetails = async () => {
+    if (!lastReportId) return;
+    setLoadingReportDetails(true);
+    try {
+      const res = await healthApi.getReport(lastReportId, clientId);
+      setReportDetails(res.report || null);
+      setShowReportDetails(true);
+    } catch (error) {
+      console.error("Failed to load report details:", error);
+      alert("Failed to load report details");
+    } finally {
+      setLoadingReportDetails(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const resolvedExtraction =
+    reportDetails && typeof reportDetails.extraction === "string"
+      ? JSON.parse(reportDetails.extraction)
+      : reportDetails?.extraction;
+  const reportVitals = resolvedExtraction?.vitals || [];
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -260,6 +288,23 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
             </div>
           )}
 
+          {lastReportId && (
+            <div className="p-3 rounded-lg border border-white/10 bg-white/5 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-400">Report ID</p>
+                <p className="text-sm text-gray-200">{lastReportId}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleViewReportDetails}
+                disabled={loadingReportDetails}
+                className="btn-secondary"
+              >
+                {loadingReportDetails ? "Loading..." : "Report Details"}
+              </button>
+            </div>
+          )}
+
           <div className="flex gap-3 pt-4">
             <button
               type="button"
@@ -278,9 +323,71 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
             </button>
           </div>
         </form>
+
+        {showReportDetails && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="card max-w-lg w-full">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
+                <h3 className="text-lg font-semibold">Report Details</h3>
+                <button
+                  type="button"
+                  onClick={() => setShowReportDetails(false)}
+                  className="text-gray-400 hover:text-gray-200"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="p-5 space-y-3 text-sm">
+                <div>
+                  <p className="text-gray-400">Report ID</p>
+                  <p className="text-gray-200">{reportDetails?.id || "-"}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400">File</p>
+                  <p className="text-gray-200">{reportDetails?.file_name || "-"}</p>
+                  {reportDetails?.file_url && (
+                    <a
+                      href={reportDetails.file_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      View file
+                    </a>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-gray-400">Status</p>
+                    <p className="text-gray-200">{reportDetails?.status || "pending"}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Vitals Found</p>
+                    <p className="text-gray-200">{reportVitals.length}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-gray-400">Uploaded</p>
+                    <p className="text-gray-200">
+                      {reportDetails?.uploaded_at ? new Date(reportDetails.uploaded_at).toLocaleString() : "-"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">Extracted</p>
+                    <p className="text-gray-200">
+                      {reportDetails?.extracted_at ? new Date(reportDetails.extracted_at).toLocaleString() : "-"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
 export default DiagnosticsUpload;
+

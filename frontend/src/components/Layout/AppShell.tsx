@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Calendar, HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { useAuth } from "../../contexts/AuthContext";
 import { resourcesApi } from "../../services/api";
 
@@ -115,6 +116,16 @@ const AppShell: React.FC<Props> = ({ children }) => {
     return client?.name || client?.phone || "";
   }, [clients, selectedClient]);
 
+  const selectedClientPhone = useMemo(() => {
+    if (!selectedClient) return "";
+    const client = clients.find((c) => c.id === selectedClient);
+    return client?.phone || "";
+  }, [clients, selectedClient]);
+
+  const selectedClientPhoneDigits = useMemo(() => {
+    return (selectedClientPhone || "").replace(/[^0-9+]/g, "");
+  }, [selectedClientPhone]);
+
   useEffect(() => {
     if (!clientSearch) return;
     if (filteredClients.length === 1) {
@@ -162,32 +173,54 @@ const AppShell: React.FC<Props> = ({ children }) => {
                   </span>
                   <span className={`text-[11px] ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
                     <a
-                      href={`tel:${clients.find((c) => c.id === selectedClient)?.phone || ""}`}
+                      href={`tel:${selectedClientPhone}`}
                       className="hover:underline"
                     >
                       CALL
                     </a>
                     {" / "}
                     <a
-                      href={`sms:${clients.find((c) => c.id === selectedClient)?.phone || ""}`}
+                      href={`sms:${selectedClientPhone}`}
                       className="hover:underline"
                     >
                       SMS
                     </a>
                     {" / "}
                     <a
-                      href={`https://wa.me/${(clients.find((c) => c.id === selectedClient)?.phone || "").replace(/[^0-9]/g, "")}`}
+                      href={`https://wa.me/${selectedClientPhoneDigits.replace(/[^0-9]/g, "")}`}
                       target="_blank"
                       rel="noreferrer"
                       className="hover:underline"
                     >
                       Whats App
                     </a>
+                    {" / "}
+                    <a
+                      href={`https://wa.me/${selectedClientPhoneDigits.replace(/[^0-9]/g, "")}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="hover:underline"
+                    >
+                      V-Call
+                    </a>
                   </span>
                 </div>
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              {user?.id && (
+                <div className="flex flex-col items-center">
+                  <QRCodeCanvas
+                    value={user.id}
+                    size={56}
+                    bgColor="transparent"
+                    fgColor={theme === "light" ? "#111827" : "#e5e7eb"}
+                  />
+                  <span className={`text-[10px] ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
+                    User QR
+                  </span>
+                </div>
+              )}
               {hasResourceRole && (
                 <>
                   <button

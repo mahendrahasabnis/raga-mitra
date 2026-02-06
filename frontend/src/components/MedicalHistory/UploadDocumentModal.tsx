@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { X, Upload, FileText, Image as ImageIcon, Download, Save } from 'lucide-react';
 import { medicalHistoryApi } from '../../services/api';
+import SelectDropdown from '../UI/SelectDropdown';
 
 interface UploadDocumentModalProps {
   isOpen: boolean;
@@ -284,16 +285,16 @@ const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Receipt Type
               </label>
-              <select
+              <SelectDropdown
                 value={receiptType}
-                onChange={(e) => setReceiptType(e.target.value as any)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-              >
-                <option value="consultation">Consultation</option>
-                <option value="medicine">Medicine Purchase</option>
-                <option value="test">Test/Diagnostics</option>
-                <option value="other">Other</option>
-              </select>
+                options={[
+                  { value: 'consultation', label: 'Consultation' },
+                  { value: 'medicine', label: 'Medicine Purchase' },
+                  { value: 'test', label: 'Test/Diagnostics' },
+                  { value: 'other', label: 'Other' },
+                ]}
+                onChange={(value) => setReceiptType(value as any)}
+              />
             </div>
           )}
 

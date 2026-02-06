@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus } from 'lucide-react';
 import { vitalParametersApi } from '../../services/api';
+import SelectDropdown from '../UI/SelectDropdown';
 
 interface ParameterDefinition {
   id: string;
@@ -260,20 +261,20 @@ const AddParameterModal: React.FC<AddParameterModalProps> = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Category
             </label>
-            <select
+            <SelectDropdown
               value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="general">General</option>
-              <option value="diabetes">Diabetes</option>
-              <option value="hypertension">Hypertension</option>
-              <option value="cardiac">Cardiac</option>
-              <option value="respiratory">Respiratory</option>
-              <option value="renal">Renal</option>
-              <option value="liver">Liver</option>
-              <option value="thyroid">Thyroid</option>
-            </select>
+              options={[
+                { value: 'general', label: 'General' },
+                { value: 'diabetes', label: 'Diabetes' },
+                { value: 'hypertension', label: 'Hypertension' },
+                { value: 'cardiac', label: 'Cardiac' },
+                { value: 'respiratory', label: 'Respiratory' },
+                { value: 'renal', label: 'Renal' },
+                { value: 'liver', label: 'Liver' },
+                { value: 'thyroid', label: 'Thyroid' },
+              ]}
+              onChange={(value) => setFormData({ ...formData, category: value })}
+            />
           </div>
 
           {/* Notes */}

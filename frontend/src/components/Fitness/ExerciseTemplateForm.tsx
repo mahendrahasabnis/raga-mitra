@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, Dumbbell } from "lucide-react";
 import { fitnessApi } from "../../services/api";
+import SelectDropdown from "../UI/SelectDropdown";
 
 interface ExerciseTemplateFormProps {
   isOpen: boolean;
@@ -121,16 +122,16 @@ const ExerciseTemplateForm: React.FC<ExerciseTemplateFormProps> = ({
 
             <div>
               <label className="block text-sm font-medium mb-2">Difficulty</label>
-              <select
+              <SelectDropdown
                 value={formData.difficulty}
-                onChange={(e) => setFormData({ ...formData, difficulty: e.target.value })}
-                className="input-field w-full"
-              >
-                <option value="">Select...</option>
-                <option value="Beginner">Beginner</option>
-                <option value="Intermediate">Intermediate</option>
-                <option value="Advanced">Advanced</option>
-              </select>
+                options={[
+                  { value: "", label: "Select..." },
+                  { value: "Beginner", label: "Beginner" },
+                  { value: "Intermediate", label: "Intermediate" },
+                  { value: "Advanced", label: "Advanced" },
+                ]}
+                onChange={(value) => setFormData({ ...formData, difficulty: value })}
+              />
             </div>
           </div>
 

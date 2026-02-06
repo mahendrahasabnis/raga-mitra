@@ -174,7 +174,11 @@
     font-family: 'Inter', system-ui, sans-serif;
     font-weight: 600;
     font-size: 0.9375rem;
-    padding: 0.875rem 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.25rem;
+    padding: 0 1rem;
     border-radius: var(--border-radius-pill);
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     background-color: var(--primary);
@@ -183,6 +187,7 @@
     cursor: pointer;
     box-shadow: var(--shadow-glow);
     letter-spacing: -0.01em;
+    line-height: 1;
   }
 
   .btn-primary:hover:not(:disabled) {
@@ -205,7 +210,11 @@
     font-family: 'Inter', system-ui, sans-serif;
     font-weight: 500;
     font-size: 0.9375rem;
-    padding: 0.875rem 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 2.25rem;
+    padding: 0 1rem;
     border-radius: var(--border-radius-pill);
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     background: var(--panel);
@@ -215,6 +224,7 @@
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
     letter-spacing: -0.01em;
+    line-height: 1;
   }
 
   .btn-secondary:hover:not(:disabled) {

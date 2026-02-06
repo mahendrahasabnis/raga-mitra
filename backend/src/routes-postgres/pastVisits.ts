@@ -18,7 +18,7 @@ import {
   updateTestResult,
   deleteTestResult
 } from '../controllers-postgres/pastVisitDocumentController';
-import { scanReceiptAndCreateVisit, extractReceiptDataOnly } from '../controllers-postgres/receiptScanController';
+import { scanReceiptAndCreateVisit, extractReceiptDataOnly, extractDocumentDataOnly } from '../controllers-postgres/receiptScanController';
 import { extractPrescriptionDataOnly, extractTestResultDataOnly } from '../controllers-postgres/documentExtractController';
 
 const router = express.Router();
@@ -33,6 +33,7 @@ router.get('/', getPastVisits);
 // Receipt scanning endpoints
 router.post('/extract-receipt', extractReceiptDataOnly); // Extract data only (for form population)
 router.post('/scan-receipt', scanReceiptAndCreateVisit); // Extract and auto-create visit
+router.post('/extract-document', extractDocumentDataOnly); // Auto-detect and extract
 
 // Document extraction endpoints (extract-only, no appointment_id required)
 router.post('/extract-prescription', extractPrescriptionDataOnly); // Extract prescription data only

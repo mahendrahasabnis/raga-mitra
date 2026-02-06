@@ -6,7 +6,7 @@ const getApiBaseUrl = () => {
   // Health/data backend (Aarogya Mitra)
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '192.168.1.14') {
-    return 'https://aarogya-mitra-backend-integrated-pxnrabe2qq-el.a.run.app/api';
+    return 'http://localhost:5001/api';
   }
   if (window.location.hostname === '34.117.220.98' || window.location.hostname.includes('34.117.220.98')) {
     return 'http://34.117.220.98/api';
@@ -15,6 +15,10 @@ const getApiBaseUrl = () => {
 };
 
 const getUserApiBaseUrl = () => {
+  // Prefer local backend while running locally to avoid hitting remote auth endpoints
+  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    return API_BASE_URL;
+  }
   // 99platforms user/identity backend
   if (import.meta.env.VITE_USER_API_BASE_URL) return import.meta.env.VITE_USER_API_BASE_URL;
   // Default to Aarogya backend (which proxies to 99platforms to avoid CORS/auth issues)
@@ -132,6 +136,12 @@ export const healthApi = {
     const response = await api.get(`/health/appointments/${id}`);
     return response.data;
   },
+  getAppointmentDetails: async (id: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/health/appointments/${id}/details`, { params });
+    return response.data;
+  },
   createAppointment: async (payload: any) => {
     const response = await api.post('/health/appointments', payload);
     return response.data;
@@ -140,8 +150,30 @@ export const healthApi = {
     const response = await api.put(`/health/appointments/${id}`, payload);
     return response.data;
   },
+  updateAppointmentDetails: async (id: string, payload: any) => {
+    const response = await api.put(`/health/appointments/${id}/details`, payload);
+    return response.data;
+  },
   addAppointmentAttachment: async (appointmentId: string, payload: any) => {
     const response = await api.post(`/health/appointments/${appointmentId}/attachments`, payload);
+    return response.data;
+  },
+  getSignedUploadUrl: async (payload: any) => {
+    const response = await api.post('/health/uploads/signed-url', payload);
+    return response.data;
+  },
+  uploadAppointmentFile: async (appointmentId: string, payload: any) => {
+    const response = await api.post(`/health/appointments/${appointmentId}/files`, payload);
+    return response.data;
+  },
+  getAppointmentFile: async (fileId: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/health/appointments/files/${fileId}`, { params, responseType: 'blob' });
+    return response.data;
+  },
+  summarizeAppointmentAudio: async (appointmentId: string, payload: any) => {
+    const response = await api.post(`/health/appointments/${appointmentId}/audio/summary`, payload);
     return response.data;
   },
 
@@ -180,8 +212,26 @@ export const healthApi = {
     const response = await api.post('/health/reports/upload', payload);
     return response.data;
   },
+  getReport: async (reportId: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/health/reports/${reportId}`, { params });
+    return response.data;
+  },
   extractReport: async (reportId: string) => {
     const response = await api.post(`/health/reports/${reportId}/extract`);
+    return response.data;
+  },
+  extractPrescriptionData: async (payload: any) => {
+    const response = await api.post('/past-visits/extract-prescription', payload);
+    return response.data;
+  },
+  extractReceiptData: async (payload: any) => {
+    const response = await api.post('/past-visits/extract-receipt', payload);
+    return response.data;
+  },
+  extractDocumentData: async (payload: any) => {
+    const response = await api.post('/past-visits/extract-document', payload);
     return response.data;
   },
   confirmVitals: async (vitals: any[]) => {
@@ -330,6 +380,40 @@ export const fitnessApi = {
 
 // Diet module
 export const dietApi = {
+  // Meal Templates (Library)
+  getMealTemplates: async (category?: string, libraryType?: string, clientId?: string) => {
+    const params: any = {};
+    if (category) params.category = category;
+    if (libraryType) params.library_type = libraryType;
+    if (clientId) params.client_id = clientId;
+    const response = await api.get('/diet/meal-templates', { params });
+    return response.data;
+  },
+  getMealTemplate: async (id: string) => {
+    const response = await api.get(`/diet/meal-templates/${id}`);
+    return response.data;
+  },
+  createMealTemplate: async (payload: any) => {
+    const response = await api.post('/diet/meal-templates', payload);
+    return response.data;
+  },
+  updateMealTemplate: async (id: string, payload: any) => {
+    const response = await api.put(`/diet/meal-templates/${id}`, payload);
+    return response.data;
+  },
+  exportMealTemplates: async () => {
+    const response = await api.get('/diet/meal-templates/export', { responseType: 'blob' });
+    return response.data;
+  },
+  importMealTemplates: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/diet/meal-templates/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
   // Weekly Templates
   getWeekTemplates: async (clientId?: string) => {
     const params = clientId ? { client_id: clientId } : {};
@@ -358,8 +442,10 @@ export const dietApi = {
     const response = await api.get('/diet/calendar', { params });
     return response.data;
   },
-  getCalendarEntry: async (date: string) => {
-    const response = await api.get(`/diet/calendar/${date}`);
+  getCalendarEntry: async (date: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/diet/calendar/${date}`, { params });
     return response.data;
   },
   createCalendarEntry: async (payload: any) => {
@@ -687,21 +773,27 @@ export const userApi = {
   },
 
   getByPhone: async (phone: string) => {
-    const response = await userApiClient.get(`/users/by-phone/${phone}`);
+    const response = await userApiClient.get(`/users/by-phone/${encodeURIComponent(phone)}`);
     return response.data;
   },
 
-  searchUsers: async (searchTerm: string) => {
+  searchUsers: async (searchTerm: string, options?: { signal?: AbortSignal }) => {
     const response = await userApiClient.get('/users/search', {
-      params: { searchTerm }
+      params: { searchTerm },
+      signal: options?.signal
     });
     return response.data;
   },
 
-  searchDoctors: async (searchTerm: string) => {
+  searchDoctors: async (searchTerm: string, options?: { signal?: AbortSignal }) => {
     const response = await api.get('/users/search/doctors', {
-      params: { searchTerm }
+      params: { searchTerm },
+      signal: options?.signal
     });
+    return response.data;
+  },
+  createDoctor: async (payload: { name?: string; phone: string }) => {
+    const response = await api.post('/users/doctors', payload);
     return response.data;
   },
   
@@ -826,6 +918,10 @@ export const medicalHistoryApi = {
   // Receipt Scanning
   extractReceiptData: async (receiptData: any) => {
     const response = await api.post('/past-visits/extract-receipt', receiptData);
+    return response.data;
+  },
+  extractDocumentData: async (payload: any) => {
+    const response = await api.post('/past-visits/extract-document', payload);
     return response.data;
   },
   scanReceiptAndCreateVisit: async (receiptData: any) => {

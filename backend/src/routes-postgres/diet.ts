@@ -1,8 +1,34 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { authenticate } from '../middleware/auth';
 import * as dietController from '../controllers-postgres/dietController';
 
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel' ||
+        file.originalname.endsWith('.xlsx') ||
+        file.originalname.endsWith('.xls')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only Excel files (.xlsx, .xls) are allowed'));
+    }
+  }
+});
+
 const router = Router();
+
+// Meal Templates (Library)
+router.get('/meal-templates/export', authenticate, dietController.exportMealTemplates);
+router.post('/meal-templates/import', authenticate, upload.single('file'), dietController.importMealTemplates);
+router.get('/meal-templates', authenticate, dietController.getMealTemplates);
+router.get('/meal-templates/:id', authenticate, dietController.getMealTemplate);
+router.post('/meal-templates', authenticate, dietController.createMealTemplate);
+router.put('/meal-templates/:id', authenticate, dietController.updateMealTemplate);
 
 // Weekly Templates
 router.get('/week-templates', authenticate, dietController.getWeekTemplates);

@@ -6,7 +6,7 @@ import {
   Receipt,
   // Patient // Not yet implemented
 } from '../models-postgres';
-import { extractReceiptData, extractReceiptDataFromBase64, ExtractedReceiptData } from '../services/geminiAIService';
+import { extractReceiptData, extractReceiptDataFromBase64, extractPrescriptionData, extractPrescriptionDataFromBase64, ExtractedReceiptData, detectDocumentType, detectDocumentTypeFromBase64 } from '../services/geminiAIService';
 import { Op } from 'sequelize';
 
 /**
@@ -122,6 +122,65 @@ export const extractReceiptDataOnly = async (req: AuthRequest, res: Response) =>
 };
 
 /**
+ * Auto-detect document type and extract data accordingly
+ */
+export const extractDocumentDataOnly = async (req: AuthRequest, res: Response) => {
+  try {
+    const currentUserId = req.user?.userId;
+    if (!currentUserId) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const {
+      file_url,
+      file_base64,
+      file_type
+    } = req.body;
+
+    if (!file_url && !file_base64) {
+      return res.status(400).json({ message: 'Either file_url or file_base64 is required' });
+    }
+
+    let detection = null;
+    if (file_base64) {
+      detection = await detectDocumentTypeFromBase64(file_base64, file_type || 'image/jpeg');
+    } else if (file_url) {
+      detection = await detectDocumentType(file_url, file_type || 'image/jpeg');
+    }
+
+    if (!detection) {
+      return res.status(500).json({ message: 'Failed to detect document type' });
+    }
+
+    if (detection.document_type === 'prescription') {
+      const extracted = file_base64
+        ? await extractPrescriptionDataFromBase64(file_base64, file_type || 'image/jpeg')
+        : await extractPrescriptionData(file_url, file_type || 'image/jpeg');
+      return res.status(200).json({
+        document_type: detection.document_type,
+        extracted_data: extracted,
+        detection,
+      });
+    }
+
+    const receiptType = detection.receipt_type || 'other';
+    const extractedData = file_base64
+      ? await extractReceiptDataFromBase64(file_base64, file_type || 'image/jpeg', receiptType)
+      : await extractReceiptData(file_url, file_type || 'image/jpeg', receiptType);
+
+    return res.status(200).json({
+      document_type: 'receipt',
+      receipt_type: receiptType,
+      extracted_data: extractedData,
+      detection,
+    });
+  } catch (error: any) {
+    console.error('❌ [DOC EXTRACT] Error:', error.message || error);
+    return res.status(500).json({ message: 'Failed to extract document', error: error.message });
+  }
+};
+
+/**
  * Scan consultation receipt and auto-create past visit
  */
 export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response) => {
@@ -135,6 +194,7 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
       file_url,
       file_name,
       file_type,
+      receipt_type = 'consultation',
       use_ai_extraction = true,
       manual_data // If user wants to override extracted data
     } = req.body;
@@ -151,7 +211,11 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
     if (use_ai_extraction && file_url) {
       try {
         console.log('🤖 [RECEIPT SCAN] Extracting receipt data...');
-        extractedData = await extractReceiptData(file_url, file_type || 'image/jpeg', 'consultation');
+        extractedData = await extractReceiptData(
+          file_url,
+          file_type || 'image/jpeg',
+          receipt_type
+        );
         aiExtractionMetadata = {
           extracted_at: new Date(),
           confidence: extractedData.confidence || 0,
@@ -296,7 +360,7 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
       appointment_id: appointment_id,
       patient_id: patientRecord?.id || null, // Patient model not yet implemented
       patient_name: patientRecord?.name || req.user?.phone || 'Patient',
-      receipt_type: 'consultation',
+      receipt_type,
       receipt_date: visitDate,
       doctor_name: receiptData.doctor_name,
       clinic_name: receiptData.clinic_name || '',
@@ -304,7 +368,7 @@ export const scanReceiptAndCreateVisit = async (req: AuthRequest, res: Response)
       payment_method: receiptData.payment_method || '',
       invoice_number: receiptData.invoice_number || '',
       file_url: file_url,
-      file_name: file_name || 'consultation_receipt.pdf',
+      file_name: file_name || `${receipt_type}_receipt.pdf`,
       file_type: file_type || 'application/pdf',
       is_ai_extracted: use_ai_extraction && !!extractedData,
       ai_extraction_metadata: aiExtractionMetadata,

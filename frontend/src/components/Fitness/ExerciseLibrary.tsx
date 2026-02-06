@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Dumbbell, Plus, Edit, Video, Image as ImageIcon, FileText, Search, Download, Upload, Users } from "lucide-react";
 import { fitnessApi } from "../../services/api";
 import ExerciseTemplateForm from "./ExerciseTemplateForm";
+import SelectDropdown from "../UI/SelectDropdown";
 
 interface ExerciseLibraryProps {
   selectedClient?: string | null;
@@ -263,18 +264,16 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                 className="input-field w-full pl-10"
               />
             </div>
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="input-field"
-            >
-              <option value="">All Categories</option>
-              {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[180px]">
+              <SelectDropdown
+                value={categoryFilter}
+                options={[
+                  { value: "", label: "All Categories" },
+                  ...categories.map((cat) => ({ value: cat, label: cat })),
+                ]}
+                onChange={(value) => setCategoryFilter(value)}
+              />
+            </div>
           </div>
         </div>
 

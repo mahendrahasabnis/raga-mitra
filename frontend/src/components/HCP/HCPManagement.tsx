@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Building2, Plus, MapPin, Phone, Mail, Users, Calendar, Clock, Edit2, Save, X } from 'lucide-react';
+import SelectDropdown from '../UI/SelectDropdown';
 // TODO: These components need to be created
 // import HCPRegistration from './HCPRegistration';
 // import ClinicManagement from './ClinicManagement';
@@ -515,16 +516,16 @@ const HCPManagement: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Type
                     </label>
-                    <select
+                    <SelectDropdown
                       value={editingHCP.type}
-                      onChange={(e) => setEditingHCP({...editingHCP, type: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="hospital">Hospital</option>
-                      <option value="clinic">Clinic</option>
-                      <option value="practice">Practice</option>
-                      <option value="diagnostic_center">Diagnostic Center</option>
-                    </select>
+                      options={[
+                        { value: 'hospital', label: 'Hospital' },
+                        { value: 'clinic', label: 'Clinic' },
+                        { value: 'practice', label: 'Practice' },
+                        { value: 'diagnostic_center', label: 'Diagnostic Center' },
+                      ]}
+                      onChange={(value) => setEditingHCP({ ...editingHCP, type: value })}
+                    />
                   </div>
 
                   <div>

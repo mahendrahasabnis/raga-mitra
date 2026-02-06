@@ -117,6 +117,7 @@ import('jsonwebtoken')
   .then((mod: any) => {
     const jwt = mod.default || mod;
     app.post('/api/auth/login', async (req, res) => {
+      let localSequelize: any = null;
       try {
         const { phone, pin, platform = 'aarogya-mitra' } = req.body || {};
         if (!phone || !pin) {
@@ -144,6 +145,7 @@ import('jsonwebtoken')
           }
         );
 
+        localSequelize = sequelize;
         const [rows]: any = await sequelize.query(
           `SELECT u.*, 
                   p.platform_name AS platform_name,
@@ -226,14 +228,8 @@ import('jsonwebtoken')
         console.error('❌ [LOGIN-EARLY] Error:', err?.message || err);
         res.status(500).json({ message: 'Login failed' });
       } finally {
-        // Best-effort close if we created sequelize above
-        try {
-          const { sequelize } = await import('./config/database-integrated');
-          if (sequelize && typeof sequelize.close === 'function') {
-            await sequelize.close().catch(() => {});
-          }
-        } catch {
-          /* ignore */
+        if (localSequelize && typeof localSequelize.close === 'function') {
+          await localSequelize.close().catch(() => {});
         }
       }
     });

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { QueryTypes } from 'sequelize';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const getAppSequelize = async () => {
   try {
@@ -57,6 +57,48 @@ const ensurePatientResourcesTable = async () => {
   } catch (err: any) {
     // Ignore if table exists
   }
+};
+
+const normalizeExcelValue = (value: any) => {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') {
+    if ('text' in value && typeof value.text === 'string') return value.text;
+    if ('result' in value) return value.result;
+    if ('richText' in value && Array.isArray(value.richText)) {
+      return value.richText.map((part: any) => part.text || '').join('');
+    }
+  }
+  return value;
+};
+
+const parseExcelBuffer = async (buffer: Buffer) => {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+  headerRow.eachCell((cell, colNumber) => {
+    const rawHeader = normalizeExcelValue(cell.value);
+    const header = rawHeader ? String(rawHeader).trim() : '';
+    headers[colNumber - 1] = header;
+  });
+  const rows: any[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const obj: any = {};
+    row.eachCell((cell, colNumber) => {
+      const header = headers[colNumber - 1];
+      if (!header) return;
+      const value = normalizeExcelValue(cell.value);
+      if (value !== null && value !== undefined && `${value}`.trim() !== '') {
+        obj[header] = value;
+      }
+    });
+    if (Object.keys(obj).length > 0) rows.push(obj);
+  });
+  return rows;
 };
 
 // ========== EXERCISE TEMPLATES (Library) ==========
@@ -360,38 +402,32 @@ export const exportExerciseTemplates = async (req: any, res: Response) => {
       'Weight-03': ex.weight_03 || ''
     }));
 
-    // Create workbook and worksheet
-    const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-
-    // Set column widths for better readability
-    const colWidths = [
-      { wch: 20 }, // Exercise Name
-      { wch: 40 }, // Description
-      { wch: 15 }, // Category
-      { wch: 30 }, // Muscle Groups
-      { wch: 40 }, // Video URL
-      { wch: 40 }, // Image URL
-      { wch: 40 }, // Document URL
-      { wch: 50 }, // Instructions
-      { wch: 15 }, // Sets
-      { wch: 15 }, // Reps
-      { wch: 18 }, // Duration
-      { wch: 12 }, // Difficulty
-      { wch: 12 }, // Set-01-Rep
-      { wch: 12 }, // Weight-01
-      { wch: 12 }, // Set-02-Rep
-      { wch: 12 }, // Weight-02
-      { wch: 12 }, // Set-03-Rep
-      { wch: 12 }  // Weight-03
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Exercises');
+    worksheet.columns = [
+      { header: 'Exercise Name', key: 'Exercise Name', width: 20 },
+      { header: 'Description', key: 'Description', width: 40 },
+      { header: 'Category', key: 'Category', width: 15 },
+      { header: 'Muscle Groups', key: 'Muscle Groups', width: 30 },
+      { header: 'Video URL', key: 'Video URL', width: 40 },
+      { header: 'Image URL', key: 'Image URL', width: 40 },
+      { header: 'Document URL', key: 'Document URL', width: 40 },
+      { header: 'Instructions', key: 'Instructions', width: 50 },
+      { header: 'Sets (Default)', key: 'Sets (Default)', width: 15 },
+      { header: 'Reps (Default)', key: 'Reps (Default)', width: 15 },
+      { header: 'Duration (seconds)', key: 'Duration (seconds)', width: 18 },
+      { header: 'Difficulty', key: 'Difficulty', width: 12 },
+      { header: 'Set-01-Rep', key: 'Set-01-Rep', width: 12 },
+      { header: 'Weight-01', key: 'Weight-01', width: 12 },
+      { header: 'Set-02-Rep', key: 'Set-02-Rep', width: 12 },
+      { header: 'Weight-02', key: 'Weight-02', width: 12 },
+      { header: 'Set-03-Rep', key: 'Set-03-Rep', width: 12 },
+      { header: 'Weight-03', key: 'Weight-03', width: 12 },
     ];
-    worksheet['!cols'] = colWidths;
+    worksheet.addRows(excelData);
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Exercises');
-
-    // Generate Excel file buffer
-    const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const excelBuffer = Buffer.from(buffer as ArrayBuffer);
 
     // Set response headers for Excel file download
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -423,14 +459,7 @@ export const importExerciseTemplates = async (req: any, res: Response) => {
       
       try {
         // Read Excel file buffer
-        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-        
-        // Get first worksheet
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        
-        // Convert to JSON
-        const excelData = XLSX.utils.sheet_to_json(worksheet);
+        const excelData = await parseExcelBuffer(req.file.buffer);
         
         // Map Excel columns to exercise fields
         exercises = excelData.map((row: any) => {
@@ -990,7 +1019,7 @@ export const getCalendarEntry = async (req: any, res: Response) => {
 
     const entryRows = Array.isArray(rows) ? rows : [];
     if (entryRows.length === 0) {
-      return res.status(404).json({ message: 'Not found' });
+      return res.json({ entry: null });
     }
     
     const entry = entryRows[0];
@@ -1065,12 +1094,18 @@ export const createCalendarEntry = async (req: any, res: Response) => {
         type: QueryTypes.INSERT,
       }
     );
+
+    const entryRows: any = await sequelize.query(
+      `SELECT id FROM fitness_calendar_entries WHERE patient_user_id = :userId AND date = :date`,
+      { replacements: { userId: targetUserId, date }, type: QueryTypes.SELECT }
+    );
+    const resolvedEntryId = Array.isArray(entryRows) && entryRows.length > 0 ? entryRows[0].id : entryId;
     
     // Delete existing sessions if override
     if (is_override && sessions.length > 0) {
       await sequelize.query(
         `DELETE FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId`,
-        { replacements: { entryId }, type: QueryTypes.DELETE }
+        { replacements: { entryId: resolvedEntryId }, type: QueryTypes.DELETE }
       );
     }
     
@@ -1083,7 +1118,7 @@ export const createCalendarEntry = async (req: any, res: Response) => {
         {
           replacements: {
             id: sessionId,
-            entryId,
+            entryId: resolvedEntryId,
             sessionName: sessionData.session_name,
             sessionOrder: sessionData.session_order || 0,
             notes: sessionData.notes || null,

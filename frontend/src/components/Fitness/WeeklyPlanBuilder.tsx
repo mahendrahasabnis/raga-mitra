@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Calendar, Plus, Edit, Trash2, Dumbbell, GripVertical } from "lucide-react";
 import { fitnessApi } from "../../services/api";
 import ExerciseLibrary from "./ExerciseLibrary";
+import SelectDropdown from "../UI/SelectDropdown";
 
 interface WeeklyPlanBuilderProps {
   selectedClient?: string | null;
@@ -53,9 +54,13 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
     setLoading(true);
     try {
       const res = await fitnessApi.getWeekTemplates(selectedClient || undefined);
-      setTemplates(res.templates || []);
+      const activeTemplates = (res.templates || []).filter((t: any) => t.is_active !== false);
+      setTemplates(activeTemplates);
       if (!selectedTemplate && res.templates && res.templates.length > 0) {
-        fetchTemplateDetails(res.templates[0].id);
+        const firstActive = activeTemplates[0];
+        if (firstActive?.id) {
+          fetchTemplateDetails(firstActive.id);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch templates:", error);
@@ -259,6 +264,78 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
     }
   };
 
+  const handleDeleteTemplate = async () => {
+    if (!selectedTemplate) return;
+    if (!confirm("Delete this weekly template?")) return;
+    try {
+      const payload = {
+        name: selectedTemplate.name,
+        description: selectedTemplate.description,
+        is_active: false,
+        days: selectedTemplate.days || [],
+        client_id: selectedClient || undefined,
+      };
+      await fitnessApi.updateWeekTemplate(selectedTemplate.id, payload);
+      setSelectedTemplate(null);
+      await fetchTemplates();
+      onRefresh && onRefresh();
+    } catch (error) {
+      console.error("Failed to delete template:", error);
+      alert("Failed to delete template");
+    }
+  };
+
+  const handleDeleteSession = async (dayIndex: number, sessionId: string) => {
+    if (!selectedTemplate) return;
+    if (!confirm("Delete this session?")) return;
+    const updatedDays = [...selectedTemplate.days];
+    const day = updatedDays[dayIndex];
+    if (!day?.sessions) return;
+    day.sessions = day.sessions.filter((s: any) => s.id !== sessionId);
+    const templateData = {
+      name: selectedTemplate.name,
+      description: selectedTemplate.description,
+      days: updatedDays,
+      client_id: selectedClient || undefined,
+    };
+    try {
+      const res = await fitnessApi.updateWeekTemplate(selectedTemplate.id, templateData);
+      if (res.template) {
+        setSelectedTemplate(res.template);
+      }
+      onRefresh && onRefresh();
+    } catch (error) {
+      console.error("Failed to delete session:", error);
+      alert("Failed to delete session");
+    }
+  };
+
+  const handleDeleteExercise = async (dayIndex: number, sessionId: string, exerciseIndex: number) => {
+    if (!selectedTemplate) return;
+    if (!confirm("Delete this exercise?")) return;
+    const updatedDays = [...selectedTemplate.days];
+    const day = updatedDays[dayIndex];
+    const session = day?.sessions?.find((s: any) => s.id === sessionId);
+    if (!session?.exercises) return;
+    session.exercises = session.exercises.filter((_: any, idx: number) => idx !== exerciseIndex);
+    const templateData = {
+      name: selectedTemplate.name,
+      description: selectedTemplate.description,
+      days: updatedDays,
+      client_id: selectedClient || undefined,
+    };
+    try {
+      const res = await fitnessApi.updateWeekTemplate(selectedTemplate.id, templateData);
+      if (res.template) {
+        setSelectedTemplate(res.template);
+      }
+      onRefresh && onRefresh();
+    } catch (error) {
+      console.error("Failed to delete exercise:", error);
+      alert("Failed to delete exercise");
+    }
+  };
+
   if (loading) {
     return (
       <div className="card p-4">
@@ -305,23 +382,19 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
         {templates.length === 0 ? (
           <p className="text-sm text-gray-400">No templates yet. Create one to get started.</p>
         ) : (
-          <select
+          <SelectDropdown
             value={selectedTemplate?.id || ""}
-            onChange={(e) => {
-              const template = templates.find((t) => t.id === e.target.value);
+            options={[
+              { value: "", label: "Select a template..." },
+              ...templates.map((t) => ({ value: t.id, label: t.name })),
+            ]}
+            onChange={(value) => {
+              const template = templates.find((t) => t.id === value);
               if (template) {
                 fetchTemplateDetails(template.id);
               }
             }}
-            className="input-field w-full"
-          >
-            <option value="">Select a template...</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          />
         )}
       </div>
 
@@ -329,7 +402,17 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
       {selectedTemplate && (
         <div className="space-y-4">
           <div className="card p-4">
-            <h3 className="font-semibold mb-4">{selectedTemplate.name}</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">{selectedTemplate.name}</h3>
+              <button
+                onClick={handleDeleteTemplate}
+                className="btn-secondary text-xs flex items-center gap-1"
+                title="Delete template"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
+            </div>
 
             <div className="space-y-4">
               {DAYS.map((dayName, dayIndex) => {
@@ -353,12 +436,24 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
                           <div key={session.id} className="bg-white/5 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-2">
                               <h5 className="font-medium text-sm">{session.session_name}</h5>
-                              <button
-                                onClick={() => handleExerciseLibraryOpen(dayIndex, session.id)}
-                                className="text-xs btn-secondary"
-                              >
-                                Add Exercise
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleExerciseLibraryOpen(dayIndex, session.id)}
+                                  className="text-xs btn-secondary"
+                                >
+                                  Add Exercise
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteSession(dayIndex, session.id);
+                                  }}
+                                  className="text-xs btn-secondary"
+                                  title="Delete session"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             {session.exercises?.length > 0 ? (
@@ -391,6 +486,16 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
                                         </span>
                                       )}
                                     </div>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteExercise(dayIndex, session.id, idx);
+                                      }}
+                                      className="text-xs btn-secondary"
+                                      title="Delete exercise"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
                                   </div>
                                 ))}
                               </div>
@@ -487,14 +592,14 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
               </div>
             <div>
               <label className="text-xs text-gray-400">Weight Unit</label>
-              <select
+              <SelectDropdown
                 value={exerciseForm.weight_unit}
-                onChange={(e) => setExerciseForm({ ...exerciseForm, weight_unit: e.target.value })}
-                className="input-field w-full"
-              >
-                <option value="kg">Kg</option>
-                <option value="lbs">Lbs</option>
-              </select>
+                options={[
+                  { value: "kg", label: "Kg" },
+                  { value: "lbs", label: "Lbs" },
+                ]}
+                onChange={(value) => setExerciseForm({ ...exerciseForm, weight_unit: value })}
+              />
             </div>
               <div>
                 <label className="text-xs text-gray-400">Duration (sec)</label>

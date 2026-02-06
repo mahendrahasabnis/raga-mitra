@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { CheckCircle2, Circle, Camera, FileText, X, Save } from "lucide-react";
+import { CheckCircle2, Circle, Camera, FileText, X, Save, Plus, Trash2 } from "lucide-react";
 import { fitnessApi } from "../../services/api";
+import ExerciseLibrary from "./ExerciseLibrary";
 
 interface SessionDetailProps {
   date: string;
@@ -15,6 +16,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   selectedClient,
   onComplete,
 }) => {
+  const [sessionData, setSessionData] = useState<any>(session);
   const [sessionTracking, setSessionTracking] = useState<any>({});
   const [exerciseTracking, setExerciseTracking] = useState<Record<string, any>>({});
   const [notes, setNotes] = useState("");
@@ -24,10 +26,39 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   const [exerciseDetails, setExerciseDetails] = useState<Record<string, any[]>>({});
   const saveTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const readOnly = !!selectedClient;
+  const canAddExercises = true;
+  const [showExerciseLibrary, setShowExerciseLibrary] = useState(false);
 
   useEffect(() => {
     fetchTracking();
-  }, [date, session?.id]);
+  }, [date, sessionData?.id]);
+
+  useEffect(() => {
+    setSessionData((prev) => {
+      if (!prev) return session;
+      const prevCount = prev?.exercises?.length || 0;
+      const nextCount = session?.exercises?.length || 0;
+      return nextCount >= prevCount ? session : prev;
+    });
+  }, [session]);
+
+  useEffect(() => {
+    if (!sessionData?.id) return;
+    if (sessionData.exercises && sessionData.exercises.length > 0) return;
+    const hydrateFromEntry = async () => {
+      try {
+        const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+        const entry = entryRes.entry;
+        const updated = entry?.sessions?.find((s: any) => s.id === sessionData.id);
+        if (updated?.exercises?.length) {
+          setSessionData(updated);
+        }
+      } catch (error) {
+        console.warn("⚠️ Failed to refresh session exercises", error);
+      }
+    };
+    hydrateFromEntry();
+  }, [date, selectedClient, sessionData?.id]);
 
   const fetchTracking = async () => {
     try {
@@ -36,7 +67,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
         date,
         date
       );
-      const sessionRows = res.tracking?.filter((t: any) => t.calendar_session_id === session?.id) || [];
+      const sessionRows = res.tracking?.filter((t: any) => t.calendar_session_id === sessionData?.id) || [];
       const sessionOnly = sessionRows.find((t: any) => !t.calendar_exercise_id);
       if (sessionOnly) {
         setSessionTracking(sessionOnly);
@@ -139,10 +170,10 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   };
 
   const upsertSessionCompletion = async (status: "completed" | "partial" | "pending") => {
-    if (!session) return;
+    if (!sessionData) return;
     const trackingData = {
-      calendar_entry_id: session.calendar_entry_id,
-      calendar_session_id: session.id,
+      calendar_entry_id: sessionData.calendar_entry_id,
+      calendar_session_id: sessionData.id,
       tracked_date: date,
       completion_status: status,
       client_id: selectedClient || undefined,
@@ -155,8 +186,103 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     }
   };
 
+  const updateCalendarEntrySessions = async (sessions: any[]) => {
+    const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+    const entry = entryRes.entry;
+    const payload = {
+      date,
+      week_template_id: entry?.week_template_id || null,
+      template_day_id: entry?.template_day_id || null,
+      is_override: true,
+      sessions,
+      client_id: selectedClient || undefined,
+    };
+    return fitnessApi.createCalendarEntry(payload);
+  };
+
+  const handleAddSessionAdhoc = async () => {
+    const sessionName = prompt("Session name (e.g., Morning, Evening):");
+    if (!sessionName) return;
+    setLoading(true);
+    try {
+      const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+      const entry = entryRes.entry;
+      const existingSessions = entry?.sessions || [];
+      const maxOrder = existingSessions.reduce((max: number, s: any) => Math.max(max, s.session_order || 0), -1);
+      const newSession = {
+        session_name: sessionName,
+        session_order: maxOrder + 1,
+        notes: null,
+        exercises: [],
+      };
+      const created = await updateCalendarEntrySessions([...existingSessions, newSession]);
+      const createdSessions = created.entry?.sessions || [];
+      const createdSession = createdSessions.find((s: any) =>
+        s.session_name === sessionName && s.session_order === newSession.session_order
+      ) || createdSessions[createdSessions.length - 1];
+      if (createdSession) {
+        setSessionData(createdSession);
+      }
+    } catch (error) {
+      console.error("Failed to add session:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteSession = async () => {
+    if (!sessionData) return;
+    if (!confirm("Delete this session?")) return;
+    setLoading(true);
+    try {
+      const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+      const entry = entryRes.entry;
+      const remainingSessions = (entry?.sessions || []).filter((s: any) => s.id !== sessionData.id);
+      const created = await updateCalendarEntrySessions(remainingSessions);
+      const nextSession = created.entry?.sessions?.[0];
+      if (nextSession) {
+        setSessionData(nextSession);
+      } else {
+        setSessionData(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete session:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteExercise = async (exercise: any, exerciseIndex: number) => {
+    if (!sessionData) return;
+    if (!confirm("Delete this exercise?")) return;
+    setLoading(true);
+    try {
+      const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+      const entry = entryRes.entry;
+      const updatedSessions = (entry?.sessions || []).map((s: any) => {
+        if (s.id !== sessionData.id) return s;
+        const exercises = s.exercises || [];
+        const filtered = exercises.filter((ex: any, idx: number) =>
+          exercise?.id ? ex.id !== exercise.id : idx !== exerciseIndex
+        );
+        return { ...s, exercises: filtered };
+      });
+      const created = await updateCalendarEntrySessions(updatedSessions);
+      const updatedSession = created.entry?.sessions?.find((s: any) =>
+        s.session_name === sessionData.session_name && s.session_order === sessionData.session_order
+      );
+      if (updatedSession) {
+        setSessionData(updatedSession);
+      }
+    } catch (error) {
+      console.error("Failed to delete exercise:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSaveExercise = async (exercise: any) => {
-    if (!session) return;
+    if (!sessionData) return;
     const details = exerciseDetails[exercise.id] || [];
     const completedCount = details.filter((d) => d.completed).length;
     const completionStatus =
@@ -180,8 +306,8 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
       : null;
 
     const trackingData = {
-      calendar_entry_id: session.calendar_entry_id,
-      calendar_session_id: session.id,
+      calendar_entry_id: sessionData.calendar_entry_id,
+      calendar_session_id: sessionData.id,
       calendar_exercise_id: exercise.id,
       tracked_date: date,
       completion_status: completionStatus,
@@ -201,12 +327,12 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
       } else {
         await fitnessApi.createTracking(trackingData);
       }
-      if (session.exercises?.length) {
-        const allCompleted = session.exercises.every((ex: any) => {
+      if (sessionData.exercises?.length) {
+        const allCompleted = sessionData.exercises.every((ex: any) => {
           if (ex.id === exercise.id) return completionStatus === "completed";
           return exerciseTracking[ex.id]?.completion_status === "completed";
         });
-        const anyCompleted = session.exercises.some((ex: any) => {
+        const anyCompleted = sessionData.exercises.some((ex: any) => {
           if (ex.id === exercise.id) return completionStatus !== "pending";
           const status = exerciseTracking[ex.id]?.completion_status;
           return status && status !== "pending";
@@ -261,13 +387,13 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   };
 
   const handleSaveNotes = async () => {
-    if (!session) return;
+    if (!sessionData) return;
 
     setLoading(true);
     try {
       const trackingData = {
-        calendar_entry_id: session.calendar_entry_id,
-        calendar_session_id: session.id,
+        calendar_entry_id: sessionData.calendar_entry_id,
+        calendar_session_id: sessionData.id,
         tracked_date: date,
         notes,
         pictures,
@@ -299,7 +425,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     setPictures(pictures.filter((_, i) => i !== index));
   };
 
-  if (!session) {
+  if (!sessionData) {
     return (
       <div className="card p-4">
         <p className="text-sm text-gray-400">No session selected</p>
@@ -307,7 +433,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     );
   }
 
-  const exercises = session.exercises || [];
+  const exercises = sessionData.exercises || [];
   const isCompleted = exercises.length > 0
     ? exercises.every((exercise: any) => exerciseTracking[exercise.id]?.completion_status === "completed")
     : sessionTracking.completion_status === "completed";
@@ -322,22 +448,45 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     <div className="space-y-4 overflow-x-hidden">
       {/* Session Header */}
       <div className="card p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold">{session.session_name}</h2>
-            <p className="text-sm text-gray-400">{new Date(date).toLocaleDateString()}</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold">{sessionData.session_name}</h2>
+              <p className="text-sm text-gray-400">{new Date(date).toLocaleDateString()}</p>
+            </div>
+            {!readOnly && (
+              <div className={`flex items-center gap-2 ${isCompleted ? "text-emerald-300" : hasInProgress ? "text-blue-300" : "text-gray-400"}`}>
+                {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
+                <span>{isCompleted ? "Completed" : hasInProgress ? "In Progress" : "Not Started"}</span>
+              </div>
+            )}
           </div>
-          {!readOnly && (
-            <div className={`flex items-center gap-2 ${isCompleted ? "text-emerald-300" : hasInProgress ? "text-blue-300" : "text-gray-400"}`}>
-              {isCompleted ? <CheckCircle2 className="h-4 w-4" /> : <Circle className="h-4 w-4" />}
-              <span>{isCompleted ? "Completed" : hasInProgress ? "In Progress" : "Not Started"}</span>
+          {(canAddExercises || !readOnly) && (
+            <div className="grid grid-cols-2 gap-2 w-full">
+              <button
+                onClick={() => setShowExerciseLibrary(true)}
+                className="btn-secondary text-xs flex items-center justify-center gap-1 w-full h-9 truncate"
+                title="Add exercise"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add
+              </button>
+              <button
+                onClick={handleDeleteSession}
+                className="btn-secondary text-xs flex items-center justify-center gap-1 w-full h-9 truncate"
+                title="Delete session"
+                disabled={loading}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </button>
             </div>
           )}
         </div>
       </div>
 
       {/* Exercises Checklist */}
-      {session.exercises && session.exercises.length > 0 && (
+      {exercises.length > 0 && (
         <div className="card p-4">
           <h3 className="font-semibold mb-4">Exercises</h3>
           <div className="space-y-3">
@@ -348,7 +497,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
 
               return (
                 <div
-                  key={exercise.id}
+                  key={exercise.id || `${exercise.exercise_name || "exercise"}-${index}`}
                   className="p-3 bg-white/5 rounded-lg"
                   onClick={() => {
                     const next = isExpanded ? null : exercise.id;
@@ -382,6 +531,17 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                     >
                       {status}
                     </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteExercise(exercise, index);
+                      }}
+                      className="btn-secondary text-xs"
+                      title="Delete exercise"
+                      disabled={loading}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   {isExpanded && (
                     <div
@@ -558,6 +718,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
         </div>
       )}
 
+
       {/* Notes */}
       {!selectedClient && (
         <div className="card p-4">
@@ -572,6 +733,115 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
             rows={4}
             placeholder="Add notes about this session..."
           />
+        </div>
+      )}
+
+      {showExerciseLibrary && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-0">
+          <div className="card w-full h-full md:h-auto md:max-w-5xl md:max-h-[90vh] p-4 overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold">Add Exercise</h3>
+              <button className="btn-secondary" onClick={() => setShowExerciseLibrary(false)}>
+                Close
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <ExerciseLibrary
+                selectedClient={selectedClient}
+                onSelectMultiple={async (templates) => {
+                  try {
+                    setLoading(true);
+                    const appended = templates.map((t: any, idx: number) => ({
+                      exercise_template_id: t.id,
+                      exercise_name: t.name,
+                      exercise_order: idx,
+                      sets: t.sets_default || null,
+                      reps: t.reps_default || null,
+                      duration: t.duration_default || null,
+                      weight: t.weight_01 || t.weight_default || null,
+                      weight_unit: "kg",
+                      set_01_rep: t.set_01_rep || null,
+                      weight_01: t.weight_01 || null,
+                      set_02_rep: t.set_02_rep || null,
+                      weight_02: t.weight_02 || null,
+                      set_03_rep: t.set_03_rep || null,
+                      weight_03: t.weight_03 || null,
+                      rest_seconds: null,
+                      notes: null,
+                    }));
+                    setShowExerciseLibrary(false);
+                    const entryRes = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+                    const entry = entryRes.entry;
+                    if (!entry?.sessions) return;
+
+                    const updatedSessions = entry.sessions.map((s: any) => {
+                      if (s.id !== sessionData.id) return s;
+                      const existingExercises = s.exercises || [];
+                      const startOrder = existingExercises.length;
+                      const appended = templates.map((t: any, idx: number) => ({
+                        exercise_template_id: t.id,
+                        exercise_name: t.name,
+                        exercise_order: startOrder + idx,
+                        sets: t.sets_default || null,
+                        reps: t.reps_default || null,
+                        duration: t.duration_default || null,
+                        weight: t.weight_01 || t.weight_default || null,
+                        weight_unit: "kg",
+                        set_01_rep: t.set_01_rep || null,
+                        weight_01: t.weight_01 || null,
+                        set_02_rep: t.set_02_rep || null,
+                        weight_02: t.weight_02 || null,
+                        set_03_rep: t.set_03_rep || null,
+                        weight_03: t.weight_03 || null,
+                        rest_seconds: null,
+                        notes: null,
+                      }));
+                      return {
+                        ...s,
+                        exercises: [...existingExercises, ...appended],
+                      };
+                    });
+                    const localUpdated = updatedSessions.find((s: any) => s.id === sessionData.id);
+                    if (localUpdated) {
+                      setSessionData(localUpdated);
+                    }
+
+                    const payload = {
+                      date,
+                      week_template_id: entry.week_template_id,
+                      template_day_id: entry.template_day_id,
+                      is_override: true,
+                      sessions: updatedSessions,
+                      client_id: selectedClient || undefined,
+                    };
+
+                  await fitnessApi.createCalendarEntry(payload);
+                  const refreshed = await fitnessApi.getCalendarEntry(date, selectedClient || undefined);
+                  const currentSessionId = sessionData?.id;
+                  const currentSessionName = sessionData?.session_name;
+                  const currentSessionOrder = sessionData?.session_order;
+                  const updatedSession = refreshed.entry?.sessions?.find((s: any) =>
+                    currentSessionId ? s.id === currentSessionId : (s.session_name === currentSessionName && s.session_order === currentSessionOrder)
+                  );
+                  if (updatedSession) {
+                    if (!localUpdated || (updatedSession.exercises?.length || 0) >= (localUpdated.exercises?.length || 0)) {
+                      setSessionData(updatedSession);
+                    }
+                    return;
+                  }
+                  if (localUpdated) {
+                    setSessionData(localUpdated);
+                  }
+                    setShowExerciseLibrary(false);
+                  } catch (error) {
+                    console.error("Failed to add exercises:", error);
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              />
+            </div>
+          </div>
         </div>
       )}
 

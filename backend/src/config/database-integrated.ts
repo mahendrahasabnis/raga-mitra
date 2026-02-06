@@ -76,17 +76,7 @@ export const appSequelize = new Sequelize({
 } as any);
 
 // Initialize shared models on the shared connection (users / platform_privileges)
-initSharedModels(sharedSequelize);
-const allShared = [...sharedModels];
-if ((sharedSequelize as any).addModels && typeof (sharedSequelize as any).addModels === 'function') {
-  (sharedSequelize as any).addModels(allShared);
-} else {
-  allShared.forEach((Model: any) => {
-    if (Model && typeof Model.init === 'function' && !Model.initialized) {
-      Model.init(Model.rawAttributes || {}, { sequelize: sharedSequelize });
-    }
-  });
-}
+// These are plain sequelize models (no sequelize-typescript decorators), so avoid addModels.
 initSharedModels(sharedSequelize);
 
 // For compatibility: default export uses app DB

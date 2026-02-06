@@ -3,6 +3,7 @@ import { Activity, Plus, Filter, TrendingUp, TrendingDown, Minus } from "lucide-
 import { healthApi } from "../../services/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import VitalsForm from "./VitalsForm";
+import SelectDropdown from "../UI/SelectDropdown";
 
 interface VitalsDashboardProps {
   vitals: any[];
@@ -116,18 +117,14 @@ const VitalsDashboard: React.FC<VitalsDashboardProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2">Parameter</label>
-              <select
+              <SelectDropdown
                 value={selectedParameter}
-                onChange={(e) => setSelectedParameter(e.target.value)}
-                className="input-field w-full"
-              >
-                <option value="">All Parameters</option>
-                {uniqueParameters.map((param) => (
-                  <option key={param} value={param}>
-                    {param}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "All Parameters" },
+                  ...uniqueParameters.map((param) => ({ value: param, label: param })),
+                ]}
+                onChange={(value) => setSelectedParameter(value)}
+              />
             </div>
             <div>
               <label className="block text-sm font-medium mb-2">Start Date</label>
