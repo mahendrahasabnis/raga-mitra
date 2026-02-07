@@ -39,8 +39,10 @@ router.get('/week-templates/:id', authenticate, fitnessController.getWeekTemplat
 router.post('/week-templates', authenticate, fitnessController.createWeekTemplate);
 router.put('/week-templates/:id', authenticate, fitnessController.updateWeekTemplate);
 
-// Calendar Entries
+// Calendar Entries (specific paths before :date)
 router.get('/calendar', authenticate, fitnessController.getCalendarEntries);
+router.post('/calendar/apply-week', authenticate, fitnessController.applyCalendarWeek);
+router.post('/calendar/remove-week', authenticate, fitnessController.removeCalendarWeek);
 router.get('/calendar/:date', authenticate, fitnessController.getCalendarEntry);
 router.post('/calendar', authenticate, fitnessController.createCalendarEntry);
 

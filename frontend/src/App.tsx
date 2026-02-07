@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import LoadingSpinner from "./components/UI/LoadingSpinner";
 import TodayPage from "./pages/App/TodayPage";
-import CalendarPage from "./pages/App/CalendarPage";
 import HealthPage from "./pages/App/HealthPage";
 import FitnessPage from "./pages/App/FitnessPage";
 import DietPage from "./pages/App/DietPage";
@@ -60,11 +59,12 @@ const App: React.FC = () => {
           }
         >
           <Route path="today" element={<TodayPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
+          <Route path="calendar" element={<Navigate to="/app/today" replace />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="fitness" element={<FitnessPage />} />
           <Route path="fitness/session/:date" element={<FitnessPage />} />
           <Route path="diet" element={<DietPage />} />
+          <Route path="diet/session/:date" element={<DietPage />} />
           <Route path="resources" element={<ResourcesPage />} />
           <Route index element={<Navigate to="/app/today" replace />} />
         </Route>

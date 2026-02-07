@@ -232,7 +232,7 @@ export const createExerciseTemplate = async (req: any, res: Response) => {
     const sequelize = await getAppSequelize();
     const {
       name, description, category, muscle_groups, video_url, image_url, document_url,
-      instructions, sets_default, reps_default, duration_default, difficulty,
+      instructions, sets_default, reps_default, duration_default, duration_default_text, difficulty,
       set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03
     } = req.body || {};
     
@@ -241,8 +241,8 @@ export const createExerciseTemplate = async (req: any, res: Response) => {
     }
     
     const [rows]: any = await sequelize.query(
-      `INSERT INTO exercise_templates (id, name, description, category, muscle_groups, video_url, image_url, document_url, instructions, sets_default, reps_default, duration_default, difficulty, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, created_by, is_active)
-       VALUES (:id, :name, :description, :category, :muscleGroups, :videoUrl, :imageUrl, :documentUrl, :instructions, :setsDefault, :repsDefault, :durationDefault, :difficulty, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :createdBy, TRUE)
+      `INSERT INTO exercise_templates (id, name, description, category, muscle_groups, video_url, image_url, document_url, instructions, sets_default, reps_default, duration_default, duration_default_text, difficulty, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, created_by, is_active)
+       VALUES (:id, :name, :description, :category, :muscleGroups, :videoUrl, :imageUrl, :documentUrl, :instructions, :setsDefault, :repsDefault, :durationDefault, :durationDefaultText, :difficulty, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :createdBy, TRUE)
        RETURNING *`,
       {
         replacements: {
@@ -257,7 +257,8 @@ export const createExerciseTemplate = async (req: any, res: Response) => {
           instructions: instructions || null,
           setsDefault: sets_default || null,
           repsDefault: reps_default || null,
-          durationDefault: duration_default || null,
+          durationDefault: duration_default ?? null,
+          durationDefaultText: duration_default_text || null,
           difficulty: difficulty || null,
           set01Rep: set_01_rep || null,
           weight01: weight_01 ? parseFloat(weight_01) : null,
@@ -294,13 +295,14 @@ export const updateExerciseTemplate = async (req: any, res: Response) => {
       set_02_rep: 'set_02_rep',
       weight_02: 'weight_02',
       set_03_rep: 'set_03_rep',
-      weight_03: 'weight_03'
+      weight_03: 'weight_03',
+      duration_default_text: 'duration_default_text',
     };
     
     Object.keys(updates).forEach((key) => {
       if (key !== 'id' && updates[key] !== undefined) {
-        // Use mapping if exists, otherwise convert snake_case to camelCase for DB
-        const dbKey = fieldMapping[key] || key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        // Use mapping if exists; otherwise keep key as-is (frontend sends snake_case column names)
+        const dbKey = fieldMapping[key] ?? key;
         updateFields.push(`${dbKey} = :${key}`);
         // Handle weight fields - convert to float
         if (key.startsWith('weight_') && updates[key]) {
@@ -736,9 +738,12 @@ export const createWeekTemplate = async (req: any, res: Response) => {
           
           if (sessionData.exercises && Array.isArray(sessionData.exercises)) {
             for (const exerciseData of sessionData.exercises) {
+              const dur = exerciseData.duration;
+              const durationNum = typeof dur === 'number' && !Number.isNaN(dur) ? dur : (typeof dur === 'string' ? parseInt(dur, 10) : null);
+              const durationText = typeof dur === 'string' && Number.isNaN(parseInt(dur, 10)) ? dur : null;
               await sequelize.query(
-                `INSERT INTO fitness_session_exercises (id, session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
-                 VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
+                `INSERT INTO fitness_session_exercises (id, session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, duration_text, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
+                 VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :durationText, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
                 {
                   replacements: {
                     id: uuidv4(),
@@ -748,7 +753,8 @@ export const createWeekTemplate = async (req: any, res: Response) => {
                     exerciseOrder: exerciseData.exercise_order || 0,
                     sets: exerciseData.sets || null,
                     reps: exerciseData.reps || null,
-                    duration: exerciseData.duration || null,
+                    duration: Number.isInteger(durationNum) ? durationNum : null,
+                    durationText: durationText || null,
                     weight: exerciseData.weight || null,
                     weightUnit: exerciseData.weight_unit || null,
                     set01Rep: exerciseData.set_01_rep || null,
@@ -890,9 +896,12 @@ export const updateWeekTemplate = async (req: any, res: Response) => {
               
               if (sessionData.exercises && Array.isArray(sessionData.exercises)) {
                 for (const exerciseData of sessionData.exercises) {
+                  const dur = exerciseData.duration;
+                  const durationNum = typeof dur === 'number' && !Number.isNaN(dur) ? dur : (typeof dur === 'string' ? parseInt(dur, 10) : null);
+                  const durationText = typeof dur === 'string' && Number.isNaN(parseInt(dur, 10)) ? dur : null;
                   await sequelize.query(
-                    `INSERT INTO fitness_session_exercises (id, session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
-                     VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
+                    `INSERT INTO fitness_session_exercises (id, session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, duration_text, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
+                     VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :durationText, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
                     {
                       replacements: {
                         id: uuidv4(),
@@ -902,7 +911,8 @@ export const updateWeekTemplate = async (req: any, res: Response) => {
                         exerciseOrder: exerciseData.exercise_order || 0,
                         sets: exerciseData.sets || null,
                         reps: exerciseData.reps || null,
-                        duration: exerciseData.duration || null,
+                        duration: Number.isInteger(durationNum) ? durationNum : null,
+                        durationText: durationText || null,
                         weight: exerciseData.weight || null,
                         weightUnit: exerciseData.weight_unit || null,
                         set01Rep: exerciseData.set_01_rep || null,
@@ -1109,12 +1119,13 @@ export const createCalendarEntry = async (req: any, res: Response) => {
       );
     }
     
+    const weekTemplateId = week_template_id || null;
     // Create sessions
     for (const sessionData of sessions) {
       const sessionId = uuidv4();
       await sequelize.query(
-        `INSERT INTO fitness_calendar_sessions (id, calendar_entry_id, session_name, session_order, notes)
-         VALUES (:id, :entryId, :sessionName, :sessionOrder, :notes)`,
+        `INSERT INTO fitness_calendar_sessions (id, calendar_entry_id, session_name, session_order, notes, week_template_id)
+         VALUES (:id, :entryId, :sessionName, :sessionOrder, :notes, :weekTemplateId)`,
         {
           replacements: {
             id: sessionId,
@@ -1122,6 +1133,7 @@ export const createCalendarEntry = async (req: any, res: Response) => {
             sessionName: sessionData.session_name,
             sessionOrder: sessionData.session_order || 0,
             notes: sessionData.notes || null,
+            weekTemplateId,
           },
           type: QueryTypes.INSERT,
         }
@@ -1129,9 +1141,12 @@ export const createCalendarEntry = async (req: any, res: Response) => {
       
       if (sessionData.exercises && Array.isArray(sessionData.exercises)) {
         for (const exerciseData of sessionData.exercises) {
+          const dur = exerciseData.duration;
+          const durationNum = typeof dur === 'number' && !Number.isNaN(dur) ? dur : (typeof dur === 'string' ? parseInt(dur, 10) : null);
+          const durationText = typeof dur === 'string' && Number.isNaN(parseInt(dur, 10)) ? dur : null;
           await sequelize.query(
-            `INSERT INTO fitness_calendar_session_exercises (id, calendar_session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
-             VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
+            `INSERT INTO fitness_calendar_session_exercises (id, calendar_session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, duration_text, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
+             VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :durationText, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
             {
               replacements: {
                 id: uuidv4(),
@@ -1141,7 +1156,8 @@ export const createCalendarEntry = async (req: any, res: Response) => {
                 exerciseOrder: exerciseData.exercise_order || 0,
                 sets: exerciseData.sets || null,
                 reps: exerciseData.reps || null,
-                duration: exerciseData.duration || null,
+                duration: Number.isInteger(durationNum) ? durationNum : null,
+                durationText: durationText || null,
                 weight: exerciseData.weight || null,
                 weightUnit: exerciseData.weight_unit || null,
                 set01Rep: exerciseData.set_01_rep || null,
@@ -1165,6 +1181,230 @@ export const createCalendarEntry = async (req: any, res: Response) => {
     return await getCalendarEntry(fakeReq, res as any);
   } catch (err: any) {
     console.error('❌ [FITNESS] createCalendarEntry error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+/** Apply a weekly template to a date range (creates/updates calendar entries and sessions per day). */
+export const applyCalendarWeek = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body.client_id;
+  const targetUserId = clientId || userId;
+  const { start_date, end_date, week_template_id } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!start_date || !end_date || !week_template_id) {
+    return res.status(400).json({ message: 'start_date, end_date, and week_template_id are required' });
+  }
+
+  try {
+    const sequelize = await getAppSequelize();
+    const { ensureFitnessTables } = await import('../utils/ensureFitnessTables');
+    await ensureFitnessTables();
+
+    const templateRows: any = await sequelize.query(
+      `SELECT * FROM fitness_week_templates WHERE id = :id`,
+      { replacements: { id: week_template_id }, type: QueryTypes.SELECT }
+    );
+    if (!Array.isArray(templateRows) || templateRows.length === 0) {
+      return res.status(404).json({ message: 'Week template not found' });
+    }
+
+    const daysRaw: any = await sequelize.query(
+      `SELECT * FROM fitness_template_days WHERE week_template_id = :id ORDER BY day_of_week ASC`,
+      { replacements: { id: week_template_id }, type: QueryTypes.SELECT }
+    );
+    const dayList = Array.isArray(daysRaw) ? daysRaw : [];
+    const templateDaysByDow: Record<number, any> = {};
+    for (const d of dayList) {
+      templateDaysByDow[d.day_of_week] = d;
+    }
+    for (const day of dayList) {
+      const sessionsRaw: any = await sequelize.query(
+        `SELECT * FROM fitness_sessions WHERE template_day_id = :dayId ORDER BY session_order ASC`,
+        { replacements: { dayId: day.id }, type: QueryTypes.SELECT }
+      );
+      day.sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+      for (const session of day.sessions) {
+        const exRaw: any = await sequelize.query(
+          `SELECT * FROM fitness_session_exercises WHERE session_id = :sessionId ORDER BY exercise_order ASC`,
+          { replacements: { sessionId: session.id }, type: QueryTypes.SELECT }
+        );
+        session.exercises = Array.isArray(exRaw) ? exRaw : [];
+      }
+    }
+
+    // Use UTC so calendar dates (YYYY-MM-DD) map to weekdays consistently: Mon=0, Sun=6
+    const start = new Date(start_date + 'T00:00:00.000Z');
+    const end = new Date(end_date + 'T00:00:00.000Z');
+    const applied: string[] = [];
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      const dayOfWeek = (d.getUTCDay() + 6) % 7; // 0=Monday .. 6=Sunday (matches WeeklyPlanBuilder DAYS order)
+      const templateDay = templateDaysByDow[dayOfWeek];
+      if (!templateDay || !templateDay.sessions?.length) continue;
+
+      const entryRows: any = await sequelize.query(
+        `SELECT id FROM fitness_calendar_entries WHERE patient_user_id = :userId AND date = :date`,
+        { replacements: { userId: targetUserId, date: dateKey }, type: QueryTypes.SELECT }
+      );
+      let entryId: string;
+      if (Array.isArray(entryRows) && entryRows.length > 0) {
+        entryId = entryRows[0].id;
+      } else {
+        entryId = uuidv4();
+        await sequelize.query(
+          `INSERT INTO fitness_calendar_entries (id, patient_user_id, date, week_template_id, template_day_id, is_override, is_rest_day, notes)
+           VALUES (:id, :userId, :date, :weekTemplateId, :templateDayId, FALSE, FALSE, NULL)`,
+          {
+            replacements: {
+              id: entryId,
+              userId: targetUserId,
+              date: dateKey,
+              weekTemplateId: week_template_id,
+              templateDayId: templateDay.id,
+            },
+            type: QueryTypes.INSERT,
+          }
+        );
+      }
+
+      await sequelize.query(
+        `DELETE FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId AND week_template_id = :weekTemplateId`,
+        { replacements: { entryId, weekTemplateId: week_template_id }, type: QueryTypes.DELETE }
+      );
+
+      let sessionOrder = 0;
+      const existingSessions: any = await sequelize.query(
+        `SELECT session_order FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId ORDER BY session_order DESC LIMIT 1`,
+        { replacements: { entryId }, type: QueryTypes.SELECT }
+      );
+      if (Array.isArray(existingSessions) && existingSessions.length > 0) {
+        sessionOrder = (existingSessions[0].session_order ?? -1) + 1;
+      }
+      for (const session of templateDay.sessions) {
+        const calSessionId = uuidv4();
+        await sequelize.query(
+          `INSERT INTO fitness_calendar_sessions (id, calendar_entry_id, session_name, session_order, notes, week_template_id)
+           VALUES (:id, :entryId, :sessionName, :sessionOrder, :notes, :weekTemplateId)`,
+          {
+            replacements: {
+              id: calSessionId,
+              entryId,
+              sessionName: session.session_name,
+              sessionOrder: sessionOrder++,
+              notes: session.notes || null,
+              weekTemplateId: week_template_id,
+            },
+            type: QueryTypes.INSERT,
+          }
+        );
+        for (const exercise of session.exercises || []) {
+          const dur = exercise.duration;
+          const durationNum = typeof dur === 'number' && !Number.isNaN(dur) ? dur : (typeof dur === 'string' ? parseInt(dur, 10) : null);
+          const durationText =
+            exercise.duration_text ||
+            (typeof dur === 'string' && Number.isNaN(parseInt(dur, 10)) ? dur : null);
+          await sequelize.query(
+            `INSERT INTO fitness_calendar_session_exercises (id, calendar_session_id, exercise_template_id, exercise_name, exercise_order, sets, reps, duration, duration_text, weight, weight_unit, set_01_rep, weight_01, set_02_rep, weight_02, set_03_rep, weight_03, rest_seconds, notes)
+             VALUES (:id, :sessionId, :templateId, :exerciseName, :exerciseOrder, :sets, :reps, :duration, :durationText, :weight, :weightUnit, :set01Rep, :weight01, :set02Rep, :weight02, :set03Rep, :weight03, :restSeconds, :notes)`,
+            {
+              replacements: {
+                id: uuidv4(),
+                sessionId: calSessionId,
+                templateId: exercise.exercise_template_id || null,
+                exerciseName: exercise.exercise_name,
+                exerciseOrder: exercise.exercise_order ?? 0,
+                sets: exercise.sets ?? null,
+                reps: exercise.reps ?? null,
+                duration: Number.isInteger(durationNum) ? durationNum : null,
+                durationText: durationText || null,
+                weight: exercise.weight ?? null,
+                weightUnit: exercise.weight_unit ?? null,
+                set01Rep: exercise.set_01_rep ?? null,
+                weight01: exercise.weight_01 ?? null,
+                set02Rep: exercise.set_02_rep ?? null,
+                weight02: exercise.weight_02 ?? null,
+                set03Rep: exercise.set_03_rep ?? null,
+                weight03: exercise.weight_03 ?? null,
+                restSeconds: exercise.rest_seconds ?? null,
+                notes: exercise.notes ?? null,
+              },
+              type: QueryTypes.INSERT,
+            }
+          );
+        }
+      }
+      applied.push(dateKey);
+    }
+    return res.json({ applied, message: `Template applied to ${applied.length} day(s)` });
+  } catch (err: any) {
+    console.error('❌ [FITNESS] applyCalendarWeek error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+/** Remove sessions from calendar in a date range that belong to the given week template. */
+export const removeCalendarWeek = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body.client_id;
+  const targetUserId = clientId || userId;
+  const { start_date, end_date, week_template_id } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!start_date || !end_date || !week_template_id) {
+    return res.status(400).json({ message: 'start_date, end_date, and week_template_id are required' });
+  }
+
+  try {
+    const sequelize = await getAppSequelize();
+    const { ensureFitnessTables } = await import('../utils/ensureFitnessTables');
+    await ensureFitnessTables();
+
+    const entries: any = await sequelize.query(
+      `SELECT id FROM fitness_calendar_entries WHERE patient_user_id = :userId AND date >= :startDate AND date <= :endDate`,
+      {
+        replacements: { userId: targetUserId, startDate: start_date, endDate: end_date },
+        type: QueryTypes.SELECT,
+      }
+    );
+    const entryList = Array.isArray(entries) ? entries : [];
+    if (entryList.length === 0) {
+      return res.json({ removed: 0, message: 'No calendar entries in range' });
+    }
+
+    let removedCount = 0;
+    for (const row of entryList) {
+      const entryId = row.id;
+      const sessionsToDelete: any = await sequelize.query(
+        `SELECT id FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId AND week_template_id = :weekTemplateId`,
+        { replacements: { entryId, weekTemplateId: week_template_id }, type: QueryTypes.SELECT }
+      );
+      const sessionIds = Array.isArray(sessionsToDelete) ? sessionsToDelete.map((s: any) => s.id) : [];
+      for (const sessionId of sessionIds) {
+        await sequelize.query(
+          `DELETE FROM fitness_calendar_session_exercises WHERE calendar_session_id = :sessionId`,
+          { replacements: { sessionId }, type: QueryTypes.DELETE }
+        );
+      }
+      await sequelize.query(
+        `DELETE FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId AND week_template_id = :weekTemplateId`,
+        { replacements: { entryId, weekTemplateId: week_template_id }, type: QueryTypes.DELETE }
+      );
+      removedCount += sessionIds.length;
+
+      const remaining: any = await sequelize.query(
+        `SELECT 1 FROM fitness_calendar_sessions WHERE calendar_entry_id = :entryId LIMIT 1`,
+        { replacements: { entryId }, type: QueryTypes.SELECT }
+      );
+      if (!Array.isArray(remaining) || remaining.length === 0) {
+        await sequelize.query(
+          `DELETE FROM fitness_calendar_entries WHERE id = :entryId`,
+          { replacements: { entryId }, type: QueryTypes.DELETE }
+        );
+      }
+    }
+    return res.json({ removed: removedCount, message: `Template removed from week` });
+  } catch (err: any) {
+    console.error('❌ [FITNESS] removeCalendarWeek error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 };
@@ -1273,15 +1513,14 @@ export const updateTracking = async (req: any, res: Response) => {
     
     Object.keys(updates).forEach((key) => {
       if (key !== 'id' && updates[key] !== undefined) {
-        const dbKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
         if (key === 'pictures') {
-          updateFields.push(`${dbKey} = :${key}::text[]`);
+          updateFields.push(`${key} = :${key}::text[]`);
           params[key] = JSON.stringify(updates[key]);
         } else if (key === 'completed_sets_detail') {
-          updateFields.push(`${dbKey} = :${key}::jsonb`);
+          updateFields.push(`${key} = :${key}::jsonb`);
           params[key] = JSON.stringify(updates[key]);
         } else {
-          updateFields.push(`${dbKey} = :${key}`);
+          updateFields.push(`${key} = :${key}`);
           params[key] = updates[key];
         }
       }
@@ -1294,13 +1533,15 @@ export const updateTracking = async (req: any, res: Response) => {
     updateFields.push('updated_at = NOW()');
     
     const sql = `UPDATE fitness_tracking SET ${updateFields.join(', ')} WHERE id = :id AND patient_user_id = :userId RETURNING *`;
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.UPDATE });
+    const raw: any = await sequelize.query(sql, { replacements: params });
+    const rows = Array.isArray(raw) ? (Array.isArray(raw[0]) ? raw[0] : raw) : [];
+    const rowsArray = Array.isArray(rows) ? rows : [];
     
-    if (rows.length === 0) {
+    if (rowsArray.length === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
     
-    return res.json({ tracking: rows[0] });
+    return res.json({ tracking: rowsArray[0] });
   } catch (err: any) {
     console.error('❌ [FITNESS] updateTracking error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });

@@ -394,17 +394,19 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
                 </div>
 
                 {/* Display Sets and Reps/Weights */}
-                {(template.sets_default || template.reps_default || template.duration_default || 
+                {(template.sets_default || template.reps_default || template.duration_default_text || template.duration_default != null || 
                   template.set_01_rep || template.set_02_rep || template.set_03_rep) && (
                   <div className="mt-3 pt-3 border-t border-white/10 text-xs text-gray-400 space-y-1">
-                    {(template.sets_default || template.reps_default || template.duration_default) && (
+                    {(template.sets_default || template.reps_default || template.duration_default_text || template.duration_default != null) && (
                       <div className="space-x-2">
                         {template.sets_default && <span>Sets: {template.sets_default}</span>}
                         {template.reps_default && (
                           <span className="ml-2">Reps: {template.reps_default}</span>
                         )}
-                        {template.duration_default && (
-                          <span className="ml-2">Duration: {template.duration_default}s</span>
+                        {(template.duration_default_text || template.duration_default != null) && (
+                          <span className="ml-2">
+                            Duration: {template.duration_default_text ?? `${template.duration_default}s`}
+                          </span>
                         )}
                       </div>
                     )}

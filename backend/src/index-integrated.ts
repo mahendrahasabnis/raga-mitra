@@ -51,25 +51,25 @@ if (corsOrigins.length === 0) {
   );
 }
 
-// Use function-based origin to dynamically allow localhost even in production
+// Use function-based origin to dynamically allow localhost and Cloud Run
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) {
       return callback(null, true);
     }
-    
     // Always allow localhost origins for local development
     if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
       return callback(null, true);
     }
-    
+    // Allow Cloud Run origins (same project frontend; hash can change on redeploy)
+    if (origin.endsWith('.run.app') && origin.includes('aarogya-mitra-frontend')) {
+      return callback(null, true);
+    }
     // Check against configured origins
     if (corsOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
-    // Default: deny
     callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -126,23 +126,32 @@ import('jsonwebtoken')
 
         // Direct connection to platforms_99 (avoid decorator issues)
         const { Sequelize } = await import('sequelize');
+        const dbHost = process.env.SHARED_DB_HOST || process.env.DB_HOST || 'localhost';
+        const isCloudSqlSocket = typeof dbHost === 'string' && dbHost.startsWith('/cloudsql/');
         const dbSSL = process.env.DB_SSL === 'true';
+
+        const sequelizeOpts: any = {
+          dialect: 'postgres',
+          logging: false
+        };
+        if (isCloudSqlSocket) {
+          // Cloud Run: connect via Unix socket (do not use host/port for TCP)
+          sequelizeOpts.host = dbHost;
+          sequelizeOpts.port = undefined;
+          sequelizeOpts.dialectOptions = { connectTimeout: 10000 };
+        } else {
+          sequelizeOpts.host = dbHost;
+          sequelizeOpts.port = parseInt(process.env.SHARED_DB_PORT || process.env.DB_PORT || '5432');
+          sequelizeOpts.dialectOptions = dbSSL ? {
+            ssl: { require: true, rejectUnauthorized: false }
+          } : undefined;
+        }
+
         const sequelize = new Sequelize(
           process.env.SHARED_DB_NAME || process.env.DB_NAME || 'platforms_99',
           process.env.SHARED_DB_USER || process.env.DB_USER || 'app_user',
           process.env.SHARED_DB_PASSWORD || process.env.DB_PASSWORD || 'app_password_2024',
-          {
-            host: process.env.SHARED_DB_HOST || process.env.DB_HOST || 'localhost',
-            port: parseInt(process.env.SHARED_DB_PORT || process.env.DB_PORT || '5432'),
-            dialect: 'postgres',
-            logging: false,
-            dialectOptions: dbSSL ? {
-              ssl: {
-                require: true,
-                rejectUnauthorized: false
-              }
-            } : undefined
-          }
+          sequelizeOpts
         );
 
         localSequelize = sequelize;
@@ -225,7 +234,9 @@ import('jsonwebtoken')
           }
         });
       } catch (err: any) {
-        console.error('❌ [LOGIN-EARLY] Error:', err?.message || err);
+        const msg = err?.message || String(err);
+        console.error('❌ [LOGIN-EARLY] Error:', msg);
+        if (err?.parent) console.error('❌ [LOGIN-EARLY] Parent:', err.parent?.message || err.parent);
         res.status(500).json({ message: 'Login failed' });
       } finally {
         if (localSequelize && typeof localSequelize.close === 'function') {

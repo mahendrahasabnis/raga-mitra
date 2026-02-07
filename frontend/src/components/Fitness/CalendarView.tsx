@@ -17,13 +17,31 @@ interface CalendarViewProps {
   viewMode?: "day" | "week";
   initialDate?: string;
   readOnly?: boolean;
+  /** When the visible week changes (week view), called with start and end date keys YYYY-MM-DD */
+  onWeekChange?: (weekStart: string, weekEnd: string) => void;
+  /** Increment to force refetch of calendar entries (e.g. after apply/remove template) */
+  refreshKey?: number;
 }
+
+const TEMPLATE_COLORS = [
+  "#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#ec4899", "#22d3ee", "#f97316",
+];
+
+const templateIdToColor = (templateId: string | null | undefined): string => {
+  if (!templateId) return "rgba(255,255,255,0.5)";
+  let hash = 0;
+  for (let i = 0; i < templateId.length; i++) hash = (hash << 5) - hash + templateId.charCodeAt(i);
+  const index = Math.abs(hash) % TEMPLATE_COLORS.length;
+  return TEMPLATE_COLORS[index];
+};
 
 const CalendarView: React.FC<CalendarViewProps> = ({
   selectedClient,
   viewMode = "week",
   initialDate,
   readOnly = false,
+  onWeekChange,
+  refreshKey = 0,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [entries, setEntries] = useState<any[]>([]);
@@ -44,7 +62,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
   useEffect(() => {
     fetchEntries();
-  }, [currentDate, selectedClient]);
+  }, [currentDate, selectedClient, refreshKey]);
+
+  useEffect(() => {
+    if (viewMode === "week" && onWeekChange) {
+      const start = getWeekStart(currentDate);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      onWeekChange(getLocalDateKey(start), getLocalDateKey(end));
+    }
+  }, [currentDate, viewMode, onWeekChange]);
 
   useEffect(() => {
     fetchKeyVitals();
@@ -83,8 +110,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
       const res = await fitnessApi.getCalendarEntries(
         selectedClient || undefined,
-        startDate.toISOString().split("T")[0],
-        endDate.toISOString().split("T")[0]
+        getLocalDateKey(startDate),
+        getLocalDateKey(endDate)
       );
       setEntries(res.entries || []);
     } catch (error) {
@@ -96,6 +123,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
   const getDateKey = (date: Date) => {
     return date.toISOString().split("T")[0];
+  };
+
+  /** Local YYYY-MM-DD so week boundaries match the displayed Mon–Sun (avoid UTC shift). */
+  const getLocalDateKey = (date: Date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
   };
 
   const formatCompactDate = (date: Date) => {
@@ -119,7 +154,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   const weekdayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   const getEntryForDate = (date: Date) => {
-    const key = getDateKey(date);
+    const key = getLocalDateKey(date);
     return entries.find((e) => e.date === key);
   };
 
@@ -325,7 +360,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const navigateToDate = (date: Date, sessionId?: string) => {
-    const key = getDateKey(date);
+    const key = getLocalDateKey(date);
     const query = sessionId ? `?sessionId=${sessionId}` : "";
     navigate(`/app/fitness/session/${key}${query}`);
   };
@@ -377,9 +412,14 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                 entry.sessions?.map((session: any) => (
                   <div
                     key={session.id}
-                    className="p-4 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition"
+                    className="p-4 bg-white/5 rounded-lg cursor-pointer hover:bg-white/10 transition flex items-start gap-2"
                     onClick={() => navigateToDate(currentDate, session.id)}
                   >
+                    <span
+                      className="shrink-0 w-3 h-3 rounded-full mt-0.5"
+                      style={{ backgroundColor: templateIdToColor(session.week_template_id) }}
+                    />
+                    <div className="min-w-0">
                     <h4 className="font-medium mb-2">{session.session_name}</h4>
                     {session.exercises?.length > 0 && (
                       <div className="space-y-1 text-sm text-gray-400">
@@ -400,6 +440,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                         )}
                       </div>
                     )}
+                    </div>
                   </div>
                 ))
               )}
@@ -460,7 +501,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
               ref={datePickerRef}
               type="date"
               className="sr-only"
-              value={getDateKey(currentDate)}
+              value={getLocalDateKey(currentDate)}
               onChange={(e) => {
                 const picked = new Date(e.target.value);
                 if (!Number.isNaN(picked.getTime())) {
@@ -501,11 +542,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({
         <div className="flex gap-2 overflow-x-auto md:grid md:grid-cols-7 md:gap-2">
           {weekDates.map((date) => {
             const entry = getEntryForDate(date);
-            const isToday = getDateKey(date) === getDateKey(new Date());
+            const isToday = getLocalDateKey(date) === getLocalDateKey(new Date());
 
             return (
               <div
-                key={getDateKey(date)}
+                key={getLocalDateKey(date)}
                 className={`p-3 rounded-lg border min-w-[120px] md:min-w-0 min-h-[220px] ${
                   isToday ? "border-blue-400 bg-blue-500/10" : "border-white/10 bg-white/5"
                 } hover:bg-white/10 transition cursor-pointer`}
@@ -528,14 +569,18 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                       {entry.sessions.map((session: any, index: number) => (
                         <button
                           key={session.id}
-                          className="text-xs w-full text-left flex items-center gap-1 hover:text-white/90"
+                          className="text-xs w-full text-left flex items-center gap-1.5 hover:text-white/90"
                           onClick={(e) => {
                             e.stopPropagation();
                             navigateToDate(date, session.id);
                           }}
                           title={session.session_name}
                         >
-                          <span className="w-4 text-gray-500">{index + 1}.</span>
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ backgroundColor: templateIdToColor(session.week_template_id) }}
+                          />
+                          <span className="w-4 text-gray-500 shrink-0">{index + 1}.</span>
                           <span className="truncate">{session.session_name}</span>
                         </button>
                       ))}
@@ -549,7 +594,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                   <p className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">Health</p>
                   <div className="h-px bg-white/10 my-2" />
                   {(() => {
-                    const vitalsToShow = keyVitals.length > 0 ? keyVitals : getRandomVitalsForDate(getDateKey(date));
+                    const vitalsToShow = keyVitals.length > 0 ? keyVitals : getRandomVitalsForDate(getLocalDateKey(date));
                     return (
                       <div className="space-y-1 text-[10px] text-gray-400 text-center">
                         {vitalsToShow.slice(0, 3).map((vital, index: number) => {

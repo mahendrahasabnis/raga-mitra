@@ -29,7 +29,12 @@ const FitnessPage: React.FC = () => {
   const [calendarTemplateId, setCalendarTemplateId] = useState<string>(
     () => localStorage.getItem("calendar-template-id") || ""
   );
+  const [calendarWeekStart, setCalendarWeekStart] = useState<string>("");
+  const [calendarWeekEnd, setCalendarWeekEnd] = useState<string>("");
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
   const [needsSessionSetup, setNeedsSessionSetup] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [removingTemplate, setRemovingTemplate] = useState(false);
 
   const templateOptions = [
     { value: "", label: "Latest template" },
@@ -413,9 +418,9 @@ const FitnessPage: React.FC = () => {
 
       {activeTab === "calendar" && (
         <div className="space-y-3">
-          <div className="card p-3 flex flex-col md:flex-row gap-3 md:items-center">
-            <div className="text-sm text-gray-400">Weekly Template</div>
-            <div className="md:w-96 w-full">
+          <div className="card p-3 flex flex-col md:flex-row gap-3 md:items-center flex-wrap">
+            <div className="text-sm text-gray-400 shrink-0">Weekly Template</div>
+            <div className="md:w-80 w-full">
               <SelectDropdown
                 value={calendarTemplateId}
                 options={templateOptions}
@@ -429,8 +434,87 @@ const FitnessPage: React.FC = () => {
                 }}
               />
             </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={!calendarTemplateId || applyingTemplate || !!selectedClient}
+                onClick={async () => {
+                  if (!calendarTemplateId || !calendarWeekStart || !calendarWeekEnd) return;
+                  try {
+                    const { entries } = await fitnessApi.getCalendarEntries(
+                      selectedClient || undefined,
+                      calendarWeekStart,
+                      calendarWeekEnd
+                    );
+                    const alreadyAdded = (entries || []).some(
+                      (e: any) =>
+                        e.sessions?.some(
+                          (s: any) => s.week_template_id === calendarTemplateId
+                        )
+                    );
+                    if (alreadyAdded) {
+                      alert("This template is already added to the visible week.");
+                      return;
+                    }
+                  } catch (e) {
+                    console.error("Check existing entries failed:", e);
+                  }
+                  setApplyingTemplate(true);
+                  try {
+                    await fitnessApi.applyWeekTemplate(
+                      calendarWeekStart,
+                      calendarWeekEnd,
+                      calendarTemplateId,
+                      selectedClient || undefined
+                    );
+                    setCalendarRefreshKey((k) => k + 1);
+                  } catch (e) {
+                    console.error("Apply template to week failed:", e);
+                  } finally {
+                    setApplyingTemplate(false);
+                  }
+                }}
+              >
+                {applyingTemplate ? "Adding…" : "Add Template to the Week"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                disabled={!calendarTemplateId || removingTemplate || !!selectedClient}
+                onClick={async () => {
+                  if (!calendarTemplateId || !calendarWeekStart || !calendarWeekEnd) return;
+                  setRemovingTemplate(true);
+                  try {
+                    await fitnessApi.removeWeekTemplate(
+                      calendarWeekStart,
+                      calendarWeekEnd,
+                      calendarTemplateId,
+                      selectedClient || undefined
+                    );
+                    setCalendarRefreshKey((k) => k + 1);
+                  } catch (e) {
+                    console.error("Remove template from week failed:", e);
+                  } finally {
+                    setRemovingTemplate(false);
+                  }
+                }}
+              >
+                {removingTemplate ? "Removing…" : "Remove Template from Week"}
+              </button>
+            </div>
           </div>
-          <CalendarView selectedClient={selectedClient} viewMode="week" initialDate={date} readOnly={!!selectedClient} />
+          <CalendarView
+            selectedClient={selectedClient}
+            viewMode="week"
+            initialDate={date}
+            readOnly={!!selectedClient}
+            onWeekChange={(start, end) => {
+              setCalendarWeekStart(start);
+              setCalendarWeekEnd(end);
+            }}
+            refreshKey={calendarRefreshKey}
+          />
         </div>
       )}
 

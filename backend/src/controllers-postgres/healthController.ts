@@ -1399,6 +1399,7 @@ export const getVitals = async (req: any, res: Response) => {
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
   
   try {
+    await ensureHealthTablesReady();
     const sequelize = await getAppSequelize();
     const cols = await describeTableSafe('vital_parameters');
     const { patientCol, parameterCol, valueCol, unitCol, measuredAtCol, referenceRangeCol, sourceReportCol } = resolveVitalColumns(cols);
@@ -1427,9 +1428,10 @@ export const getVitals = async (req: any, res: Response) => {
 
     sql += ` ORDER BY "${measuredAtCol || 'recorded_date'}" DESC`;
 
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const rows: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const list = Array.isArray(rows) ? rows : [];
 
-    return res.json({ vitals: rows || [] });
+    return res.json({ vitals: list });
   } catch (err: any) {
     console.error('❌ [HEALTH] getVitals error:', err.message || err);
     let items = inMemoryVitals.filter((v) => v.patient_user_id === targetUserId);
@@ -1542,6 +1544,7 @@ export const addVital = async (req: any, res: Response) => {
   }
 
   try {
+    await ensureHealthTablesReady();
     const sequelize = await getAppSequelize();
     const cols = await describeTableSafe('vital_parameters');
     const { patientCol, parameterCol, valueCol, unitCol, measuredAtCol, sourceReportCol, sourceCol } = resolveVitalColumns(cols);

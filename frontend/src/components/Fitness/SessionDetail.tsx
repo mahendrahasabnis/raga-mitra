@@ -95,25 +95,25 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   const getRecommendedForSet = (exercise: any, index: number) => {
     const fallbackReps = exercise.reps || "";
     const fallbackWeight = exercise.weight || "";
-    const fallbackDuration = exercise.duration || "";
+    const fallbackDuration = (exercise.duration_text || exercise.duration) ?? "";
     if (index === 0) {
       return {
         reps: exercise.set_01_rep || fallbackReps,
         weight: exercise.weight_01 || fallbackWeight,
-        duration: exercise.duration || fallbackDuration,
+        duration: fallbackDuration,
       };
     }
     if (index === 1) {
       return {
         reps: exercise.set_02_rep || fallbackReps,
         weight: exercise.weight_02 || fallbackWeight,
-        duration: exercise.duration || fallbackDuration,
+        duration: fallbackDuration,
       };
     }
     return {
       reps: exercise.set_03_rep || fallbackReps,
       weight: exercise.weight_03 || fallbackWeight,
-      duration: exercise.duration || fallbackDuration,
+      duration: fallbackDuration,
     };
   };
 
@@ -296,7 +296,10 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     const numericDuration = details
       .map((d) => parseInt(d.duration, 10))
       .filter((v) => !Number.isNaN(v));
-    const totalDuration = numericDuration.length > 0 ? numericDuration.reduce((a, b) => a + b, 0) : null;
+    const totalDuration =
+      numericDuration.length === details.length && details.length > 0
+        ? numericDuration.reduce((a, b) => a + b, 0)
+        : null;
 
     const numericWeights = details
       .map((d) => parseFloat(d.weight))
@@ -513,7 +516,13 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                       <div className="flex gap-4 text-sm text-gray-400 mt-1">
                         {exercise.sets && <span>{exercise.sets} sets</span>}
                         {exercise.reps && <span>{exercise.reps} reps</span>}
-                        {exercise.duration && <span>{exercise.duration}s</span>}
+                        {(exercise.duration_text ?? exercise.duration) && (
+                          <span>
+                            {typeof exercise.duration === "number" || (exercise.duration && !Number.isNaN(Number(exercise.duration)))
+                              ? `${exercise.duration}s`
+                              : (exercise.duration_text || exercise.duration)}
+                          </span>
+                        )}
                         {exercise.weight && <span>{exercise.weight}kg</span>}
                       </div>
                       {exercise.notes && (
@@ -553,7 +562,14 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                           <div className="font-medium text-gray-200 mb-1">Expected</div>
                           <div>Sets: {exercise.sets || 1}</div>
                           {exercise.reps && <div>Reps: {exercise.reps}</div>}
-                          {exercise.duration && <div>Duration: {exercise.duration}s</div>}
+                          {(exercise.duration_text ?? exercise.duration) && (
+                            <div>
+                              Duration:{" "}
+                              {typeof exercise.duration === "number" || (exercise.duration && !Number.isNaN(Number(exercise.duration)))
+                                ? `${exercise.duration}s`
+                                : (exercise.duration_text || exercise.duration)}
+                            </div>
+                          )}
                           {exercise.weight && <div>Weight: {exercise.weight}kg</div>}
                         </div>
                         <div>
@@ -649,7 +665,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                                 />
                               </div>
                               <div>
-                                <div className="text-gray-400 mb-1">Duration (Recommended)</div>
+                                <div className="text-gray-400 mb-1">Duration or Distance (Recommended)</div>
                                 <input
                                   type="text"
                                   value={setDetail.recommended_duration}
@@ -658,7 +674,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                                 />
                               </div>
                               <div>
-                                <div className="text-gray-400 mb-1">Duration (Actual)</div>
+                                <div className="text-gray-400 mb-1">Duration or Distance (Actual)</div>
                                 <input
                                   type="text"
                                   value={setDetail.duration}
@@ -673,7 +689,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
                                     });
                                     scheduleAutoSave(exercise);
                                   }}
-                                  placeholder="Duration"
+                                  placeholder="e.g. 5Hr 20min, 5km, 10 mile"
                                   className="input-field w-full"
                                   onClick={(e) => e.stopPropagation()}
                                   disabled={readOnly}

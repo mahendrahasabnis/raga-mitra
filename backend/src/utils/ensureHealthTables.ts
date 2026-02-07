@@ -78,6 +78,28 @@ export const ensureHealthTables = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_appointment_files_appointment ON appointment_files (appointment_id);
       CREATE INDEX IF NOT EXISTS idx_appointment_files_patient ON appointment_files (patient_user_id);
+
+      -- Vital Parameters (weight, BP, etc. for Today / Add Vitals)
+      CREATE TABLE IF NOT EXISTS vital_parameters (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        patient_user_id UUID NOT NULL,
+        parameter_name VARCHAR(255) NOT NULL,
+        value DECIMAL(12, 4) NOT NULL,
+        unit VARCHAR(50),
+        recorded_date TIMESTAMPTZ DEFAULT NOW(),
+        reference_range VARCHAR(255),
+        source_report_id UUID,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_vital_parameters_patient ON vital_parameters (patient_user_id);
+      CREATE INDEX IF NOT EXISTS idx_vital_parameters_recorded ON vital_parameters (recorded_date);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vital_parameters' AND column_name = 'parameter_name') THEN
+          ALTER TABLE vital_parameters ADD COLUMN IF NOT EXISTS parameter_name VARCHAR(255);
+        END IF;
+      END $$;
     `);
     ensured = true;
     console.log('✅ [HEALTH] Health module tables ensured in aarogya_mitra');

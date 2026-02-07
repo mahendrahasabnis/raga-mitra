@@ -11,7 +11,8 @@ const getApiBaseUrl = () => {
   if (window.location.hostname === '34.117.220.98' || window.location.hostname.includes('34.117.220.98')) {
     return 'http://34.117.220.98/api';
   }
-  return 'https://aarogya-mitra-backend-integrated-pxnrabe2qq-el.a.run.app/api';
+  // Default: aarogya-mitra project backend (same hash as frontend when deployed together)
+  return 'https://aarogya-mitra-backend-integrated-nwwg5e5xbq-el.a.run.app/api';
 };
 
 const getUserApiBaseUrl = () => {
@@ -346,6 +347,34 @@ export const fitnessApi = {
   },
   createCalendarEntry: async (payload: any) => {
     const response = await api.post('/fitness/calendar', payload);
+    return response.data;
+  },
+  applyWeekTemplate: async (
+    startDate: string,
+    endDate: string,
+    weekTemplateId: string,
+    clientId?: string
+  ) => {
+    const response = await api.post('/fitness/calendar/apply-week', {
+      start_date: startDate,
+      end_date: endDate,
+      week_template_id: weekTemplateId,
+      client_id: clientId,
+    });
+    return response.data;
+  },
+  removeWeekTemplate: async (
+    startDate: string,
+    endDate: string,
+    weekTemplateId: string,
+    clientId?: string
+  ) => {
+    const response = await api.post('/fitness/calendar/remove-week', {
+      start_date: startDate,
+      end_date: endDate,
+      week_template_id: weekTemplateId,
+      client_id: clientId,
+    });
     return response.data;
   },
 

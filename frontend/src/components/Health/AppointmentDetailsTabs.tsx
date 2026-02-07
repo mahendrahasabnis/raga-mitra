@@ -238,7 +238,7 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
       if (!ctx) throw new Error("Canvas not supported");
       canvas.width = viewport.width;
       canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
       return {
         base64: canvas.toDataURL("image/jpeg", 0.85).split(",")[1] || "",
         type: "image/jpeg",

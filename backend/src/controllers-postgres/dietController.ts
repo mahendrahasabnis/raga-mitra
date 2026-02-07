@@ -379,11 +379,12 @@ export const getWeekTemplates = async (req: any, res: Response) => {
   try {
     const sequelize = await getAppSequelize();
     await ensureDietTablesReady();
-    const [rows]: any = await sequelize.query(
+    const rows: any = await sequelize.query(
       `SELECT * FROM diet_week_templates WHERE patient_user_id = :userId ORDER BY created_at DESC`,
       { replacements: { userId: targetUserId }, type: QueryTypes.SELECT }
     );
-    return res.json({ templates: rows || [] });
+    const list = Array.isArray(rows) ? rows : [];
+    return res.json({ templates: list });
   } catch (err: any) {
     console.error('❌ [DIET] getWeekTemplates error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
@@ -400,41 +401,38 @@ export const getWeekTemplate = async (req: any, res: Response) => {
     const { id } = req.params;
     
     // Get template
-    const [templateRows]: any = await sequelize.query(
+    const templateRows: any = await sequelize.query(
       `SELECT * FROM diet_week_templates WHERE id = :id`,
       { replacements: { id }, type: QueryTypes.SELECT }
     );
-    
-    if (templateRows.length === 0) {
+    const templateArr = Array.isArray(templateRows) ? templateRows : [];
+    if (templateArr.length === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
-    
-    const template = templateRows[0];
+    const template = templateArr[0];
     
     // Get days with sessions and items
-    const [days]: any = await sequelize.query(
+    const daysRaw: any = await sequelize.query(
       `SELECT * FROM diet_template_days WHERE week_template_id = :id ORDER BY day_of_week ASC`,
       { replacements: { id }, type: QueryTypes.SELECT }
     );
-    
+    const days = Array.isArray(daysRaw) ? daysRaw : [];
     for (const day of days) {
-      const [sessions]: any = await sequelize.query(
+      const sessionsRaw: any = await sequelize.query(
         `SELECT * FROM diet_meal_sessions WHERE template_day_id = :dayId ORDER BY meal_order ASC`,
         { replacements: { dayId: day.id }, type: QueryTypes.SELECT }
       );
-      
+      const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
       for (const session of sessions) {
-        const [items]: any = await sequelize.query(
+        const itemsRaw: any = await sequelize.query(
           `SELECT * FROM diet_meal_items WHERE meal_session_id = :sessionId ORDER BY item_order ASC`,
           { replacements: { sessionId: session.id }, type: QueryTypes.SELECT }
         );
-        session.items = items || [];
+        session.items = Array.isArray(itemsRaw) ? itemsRaw : [];
       }
-      
-      day.sessions = sessions || [];
+      day.sessions = sessions;
     }
-    
-    template.days = days || [];
+    template.days = days;
     
     return res.json({ template });
   } catch (err: any) {
@@ -731,27 +729,27 @@ export const getCalendarEntries = async (req: any, res: Response) => {
     
     sql += ` ORDER BY date ASC`;
     
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const rows: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const entries = Array.isArray(rows) ? rows : [];
     
     // Get sessions for each entry
-    for (const entry of rows) {
-      const [sessions]: any = await sequelize.query(
+    for (const entry of entries) {
+      const sessions: any = await sequelize.query(
         `SELECT * FROM diet_calendar_meals WHERE calendar_entry_id = :entryId ORDER BY meal_order ASC`,
         { replacements: { entryId: entry.id }, type: QueryTypes.SELECT }
       );
-      
-      for (const session of sessions) {
-        const [items]: any = await sequelize.query(
+      const sessionList = Array.isArray(sessions) ? sessions : [];
+      for (const session of sessionList) {
+        const items: any = await sequelize.query(
           `SELECT * FROM diet_calendar_meal_items WHERE calendar_meal_id = :sessionId ORDER BY item_order ASC`,
           { replacements: { sessionId: session.id }, type: QueryTypes.SELECT }
         );
-        session.items = items || [];
+        session.items = Array.isArray(items) ? items : [];
       }
-      
-      entry.sessions = sessions || [];
+      entry.sessions = sessionList;
     }
     
-    return res.json({ entries: rows || [] });
+    return res.json({ entries });
   } catch (err: any) {
     console.error('❌ [DIET] getCalendarEntries error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
@@ -769,32 +767,30 @@ export const getCalendarEntry = async (req: any, res: Response) => {
     await ensureDietTablesReady();
     const { date } = req.params;
     
-    const [rows]: any = await sequelize.query(
+    const rows: any = await sequelize.query(
       `SELECT * FROM diet_calendar_entries WHERE patient_user_id = :userId AND date = :date`,
       { replacements: { userId: targetUserId, date }, type: QueryTypes.SELECT }
     );
-    
-    if (rows.length === 0) {
+    const arr = Array.isArray(rows) ? rows : [];
+    if (arr.length === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
-    
-    const entry = rows[0];
+    const entry = arr[0];
     
     // Get sessions
-    const [sessions]: any = await sequelize.query(
+    const sessions: any = await sequelize.query(
       `SELECT * FROM diet_calendar_meals WHERE calendar_entry_id = :entryId ORDER BY meal_order ASC`,
       { replacements: { entryId: entry.id }, type: QueryTypes.SELECT }
     );
-    
-    for (const session of sessions) {
-      const [items]: any = await sequelize.query(
+    const sessionList = Array.isArray(sessions) ? sessions : [];
+    for (const session of sessionList) {
+      const items: any = await sequelize.query(
         `SELECT * FROM diet_calendar_meal_items WHERE calendar_meal_id = :sessionId ORDER BY item_order ASC`,
         { replacements: { sessionId: session.id }, type: QueryTypes.SELECT }
       );
-      session.items = items || [];
+      session.items = Array.isArray(items) ? items : [];
     }
-    
-    entry.sessions = sessions || [];
+    entry.sessions = sessionList;
     
     return res.json({ entry });
   } catch (err: any) {
@@ -944,8 +940,9 @@ export const getTracking = async (req: any, res: Response) => {
     
     sql += ` ORDER BY tracked_date DESC, tracked_at DESC`;
     
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
-    return res.json({ tracking: rows || [] });
+    const rows: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const list = Array.isArray(rows) ? rows : [];
+    return res.json({ tracking: list });
   } catch (err: any) {
     console.error('❌ [DIET] getTracking error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
@@ -1082,8 +1079,9 @@ export const getAdHocEntries = async (req: any, res: Response) => {
     
     sql += ` ORDER BY entry_date DESC, entry_time DESC`;
     
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
-    return res.json({ entries: rows || [] });
+    const rows: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const list = Array.isArray(rows) ? rows : [];
+    return res.json({ entries: list });
   } catch (err: any) {
     console.error('❌ [DIET] getAdHocEntries error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
@@ -1242,7 +1240,7 @@ export const getProgress = async (req: any, res: Response) => {
     );
     
     // Get macros summary (stub - aggregate from tracking/entries)
-    const [macros]: any = await sequelize.query(
+    const macrosRows: any = await sequelize.query(
       `SELECT 
         COALESCE(SUM(calories), 0) as total_calories,
         COALESCE(SUM(protein), 0) as total_protein,
@@ -1255,6 +1253,7 @@ export const getProgress = async (req: any, res: Response) => {
         type: QueryTypes.SELECT,
       }
     );
+    const macros = (Array.isArray(macrosRows) && macrosRows[0]) ? macrosRows[0] : { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0 };
     
     const statsList = Array.isArray(statsRows) ? statsRows : [];
     const stats = statsList[0] || { completed_count: 0, skipped_count: 0, partial_count: 0, total_count: 0 };
@@ -1285,7 +1284,7 @@ export const getProgress = async (req: any, res: Response) => {
 
     return res.json({
       stats,
-      macros: macros || { total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0 },
+      macros,
       streak,
       period: { start_date: startDate, end_date: endDate },
     });

@@ -33,7 +33,7 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
     if (!ctx) throw new Error("Canvas not supported");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
     const blob = await new Promise<Blob>((resolve) =>
       canvas.toBlob((b) => resolve(b as Blob), "image/jpeg", 0.8)
     );

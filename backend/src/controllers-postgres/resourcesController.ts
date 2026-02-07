@@ -4,33 +4,13 @@ import { QueryTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 
 const getAppSequelize = async () => {
-  const { Sequelize } = await import('sequelize');
-  return new Sequelize(
-    process.env.DB_NAME || 'aarogya_mitra',
-    process.env.DB_USER || 'app_user',
-    process.env.DB_PASSWORD || 'app_password_2024',
-    {
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      dialect: 'postgres',
-      logging: false,
-    }
-  );
+  const db = await import('../config/database-integrated');
+  return db.appSequelize;
 };
 
 const getSharedSequelize = async () => {
-  const { Sequelize } = await import('sequelize');
-  return new Sequelize(
-    process.env.SHARED_DB_NAME || 'platforms_99',
-    process.env.SHARED_DB_USER || process.env.DB_USER || 'postgres',
-    process.env.SHARED_DB_PASSWORD || process.env.DB_PASSWORD || '',
-    {
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      dialect: 'postgres',
-      logging: false,
-    }
-  );
+  const db = await import('../config/database-integrated');
+  return db.sharedSequelize;
 };
 
 export const listResources = async (req: any, res: Response) => {
@@ -389,34 +369,35 @@ export const listClients = async (req: any, res: Response) => {
       }
     );
 
-    // Fetch patient names and phones from shared DB
-    const clients = [];
     const rowsArray = Array.isArray(rows) ? rows : [];
+    const clients: Array<{ id: string; name: string; phone: string }> = [];
+
     for (const row of rowsArray) {
       if (!row || !row.patient_user_id) continue;
-      
-      const patientUsers: any = await sharedSequelize.query(
-        `SELECT id, name, phone FROM users WHERE id = :patientUserId LIMIT 1`,
-        {
-          replacements: { patientUserId: row.patient_user_id },
-          type: QueryTypes.SELECT,
+      try {
+        const patientUsers: any = await sharedSequelize.query(
+          `SELECT id, name, phone FROM users WHERE id = :patientUserId LIMIT 1`,
+          {
+            replacements: { patientUserId: row.patient_user_id },
+            type: QueryTypes.SELECT,
+          }
+        );
+        const patient = Array.isArray(patientUsers) && patientUsers.length > 0 ? patientUsers[0] : null;
+        if (patient) {
+          clients.push({
+            id: patient.id,
+            name: patient.name || 'Unknown',
+            phone: patient.phone || 'Unknown',
+          });
         }
-      );
-
-      const patient = Array.isArray(patientUsers) && patientUsers.length > 0 ? patientUsers[0] : null;
-      if (patient) {
-        clients.push({
-          id: patient.id,
-          name: patient.name || 'Unknown',
-          phone: patient.phone || 'Unknown',
-        });
+      } catch (perClientErr: any) {
+        console.warn('⚠️ [RESOURCES] listClients: skip client', row.patient_user_id, perClientErr?.message || perClientErr);
       }
     }
 
-    return res.json({ clients: clients || [] });
+    return res.json({ clients });
   } catch (err: any) {
     console.error('❌ [RESOURCES] listClients error:', err.message || err);
-    console.error('❌ [RESOURCES] listClients stack:', err.stack);
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 };

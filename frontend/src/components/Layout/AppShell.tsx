@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Calendar, HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User } from "lucide-react";
+import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useAuth } from "../../contexts/AuthContext";
 import { resourcesApi } from "../../services/api";
 
 const tabs = [
   { to: "/app/today", label: "Today", icon: Home },
-  { to: "/app/calendar", label: "Calendar", icon: Calendar },
   { to: "/app/health", label: "Health", icon: HeartPulse },
   { to: "/app/fitness", label: "Fitness", icon: Dumbbell },
   { to: "/app/diet", label: "Diet", icon: Salad },

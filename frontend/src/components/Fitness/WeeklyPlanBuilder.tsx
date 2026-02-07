@@ -156,13 +156,14 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
         session.exercises = [];
       }
       exerciseTemplates.forEach((exerciseTemplate) => {
+        const dur = exerciseTemplate.duration_default_text ?? exerciseTemplate.duration_default;
         session.exercises.push({
           exercise_template_id: exerciseTemplate.id,
           exercise_name: exerciseTemplate.name,
           exercise_order: session.exercises.length,
           sets: exerciseTemplate.sets_default,
           reps: exerciseTemplate.reps_default,
-          duration: exerciseTemplate.duration_default,
+          duration: dur,
           set_01_rep: exerciseTemplate.set_01_rep || null,
           weight_01: exerciseTemplate.weight_01 || null,
           set_02_rep: exerciseTemplate.set_02_rep || null,
@@ -208,7 +209,7 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
       weight_02: exercise.weight_02 ?? "",
       set_03_rep: exercise.set_03_rep ?? "",
       weight_03: exercise.weight_03 ?? "",
-      duration: exercise.duration ?? "",
+      duration: (exercise.duration_text ?? exercise.duration ?? "") as string,
       weight_unit: exercise.weight_unit ?? "kg",
     });
     setExerciseEditor({ dayIndex, sessionId, exerciseIndex });
@@ -602,12 +603,13 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
               />
             </div>
               <div>
-                <label className="text-xs text-gray-400">Duration (sec)</label>
+                <label className="text-xs text-gray-400">Duration or Distance</label>
                 <input
                   type="text"
                   value={exerciseForm.duration}
                   onChange={(e) => setExerciseForm({ ...exerciseForm, duration: e.target.value })}
                   className="input-field w-full"
+                  placeholder="e.g. 30, 5Hr 20min, 5km, 10 mile"
                 />
               </div>
             </div>

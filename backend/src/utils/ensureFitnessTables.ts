@@ -80,6 +80,9 @@ export const ensureFitnessTables = async (force = false) => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'exercise_templates' AND column_name = 'weight_03') THEN
           ALTER TABLE exercise_templates ADD COLUMN weight_03 DECIMAL(10, 2);
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'exercise_templates' AND column_name = 'duration_default_text') THEN
+          ALTER TABLE exercise_templates ADD COLUMN duration_default_text VARCHAR(255);
+        END IF;
       END $$;
       CREATE INDEX IF NOT EXISTS idx_exercise_templates_category ON exercise_templates (category);
       CREATE INDEX IF NOT EXISTS idx_exercise_templates_active ON exercise_templates (is_active) WHERE is_active = TRUE;
@@ -169,6 +172,9 @@ export const ensureFitnessTables = async (force = false) => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fitness_session_exercises' AND column_name = 'weight_03') THEN
           ALTER TABLE fitness_session_exercises ADD COLUMN weight_03 DECIMAL(10, 2);
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fitness_session_exercises' AND column_name = 'duration_text') THEN
+          ALTER TABLE fitness_session_exercises ADD COLUMN duration_text VARCHAR(255);
+        END IF;
       END $$;
       CREATE INDEX IF NOT EXISTS idx_fitness_session_exercises_session ON fitness_session_exercises (session_id);
       CREATE INDEX IF NOT EXISTS idx_fitness_session_exercises_template ON fitness_session_exercises (exercise_template_id);
@@ -196,10 +202,18 @@ export const ensureFitnessTables = async (force = false) => {
         session_name VARCHAR(100) NOT NULL,
         session_order INTEGER DEFAULT 0,
         notes TEXT,
+        week_template_id UUID REFERENCES fitness_week_templates(id) ON DELETE SET NULL,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_fitness_calendar_sessions_entry ON fitness_calendar_sessions (calendar_entry_id);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fitness_calendar_sessions' AND column_name = 'week_template_id') THEN
+          ALTER TABLE fitness_calendar_sessions ADD COLUMN week_template_id UUID REFERENCES fitness_week_templates(id) ON DELETE SET NULL;
+          CREATE INDEX IF NOT EXISTS idx_fitness_calendar_sessions_week_template ON fitness_calendar_sessions (week_template_id);
+        END IF;
+      END $$;
 
       -- Calendar Session Exercises
       CREATE TABLE IF NOT EXISTS fitness_calendar_session_exercises (
@@ -246,6 +260,9 @@ export const ensureFitnessTables = async (force = false) => {
         END IF;
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fitness_calendar_session_exercises' AND column_name = 'weight_03') THEN
           ALTER TABLE fitness_calendar_session_exercises ADD COLUMN weight_03 DECIMAL(10, 2);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fitness_calendar_session_exercises' AND column_name = 'duration_text') THEN
+          ALTER TABLE fitness_calendar_session_exercises ADD COLUMN duration_text VARCHAR(255);
         END IF;
       END $$;
       CREATE INDEX IF NOT EXISTS idx_fitness_calendar_session_exercises_session ON fitness_calendar_session_exercises (calendar_session_id);

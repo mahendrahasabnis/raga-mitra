@@ -28,7 +28,7 @@ const ExerciseTemplateForm: React.FC<ExerciseTemplateFormProps> = ({
     instructions: template?.instructions || "",
     sets_default: template?.sets_default || "",
     reps_default: template?.reps_default || "",
-    duration_default: template?.duration_default || "",
+    duration_default: template?.duration_default_text ?? template?.duration_default ?? "",
     difficulty: template?.difficulty || "",
     set_01_rep: template?.set_01_rep || "",
     weight_01: template?.weight_01 || "",
@@ -43,10 +43,14 @@ const ExerciseTemplateForm: React.FC<ExerciseTemplateFormProps> = ({
     setLoading(true);
 
     try {
+      const durStr = String(formData.duration_default || "").trim();
+      const durNum = durStr ? parseInt(durStr, 10) : null;
+      const isNumericDuration = durStr !== "" && !Number.isNaN(durNum);
       const payload = {
         ...formData,
         sets_default: formData.sets_default ? parseInt(formData.sets_default) : null,
-        duration_default: formData.duration_default ? parseInt(formData.duration_default) : null,
+        duration_default: isNumericDuration ? durNum : null,
+        duration_default_text: isNumericDuration ? null : (durStr || null),
         weight_01: formData.weight_01 ? parseFloat(formData.weight_01) : null,
         weight_02: formData.weight_02 ? parseFloat(formData.weight_02) : null,
         weight_03: formData.weight_03 ? parseFloat(formData.weight_03) : null,
@@ -169,12 +173,13 @@ const ExerciseTemplateForm: React.FC<ExerciseTemplateFormProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2">Duration (seconds)</label>
+              <label className="block text-sm font-medium mb-2">Duration or Distance</label>
               <input
-                type="number"
+                type="text"
                 value={formData.duration_default}
                 onChange={(e) => setFormData({ ...formData, duration_default: e.target.value })}
                 className="input-field w-full"
+                placeholder="e.g. 30, 5Hr 20min, 5km, 10 mile"
               />
             </div>
           </div>

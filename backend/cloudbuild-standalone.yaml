@@ -1,34 +1,28 @@
+# Deploy same integrated app as Cloud Run service "aarogya-mitra-backend" (no -integrated suffix).
+# Same code and DB as aarogya-mitra-backend-integrated; different service name only.
 steps:
-  # Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:$BUILD_ID'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:latest'
       - '-f'
       - 'backend/Dockerfile'
       - 'backend'
 
-  # Push to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
-
+    args: ['push', 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:$BUILD_ID']
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+    args: ['push', 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:latest']
 
-  # Deploy to Cloud Run (--quiet avoids interactive API-enable prompts in Cloud Build)
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'aarogya-mitra-backend-integrated'
-      - '--image=gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
+      - 'aarogya-mitra-backend'
+      - '--image=gcr.io/$PROJECT_ID/aarogya-mitra-backend:$BUILD_ID'
       - '--region=asia-south1'
       - '--platform=managed'
       - '--allow-unauthenticated'
@@ -43,12 +37,10 @@ steps:
       - '--port=8080'
 
 images:
-  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:$BUILD_ID'
-  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend-integrated:latest'
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/aarogya-mitra-backend:latest'
 
 options:
   machineType: 'N1_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
-
 timeout: '1200s'
-
