@@ -317,90 +317,149 @@ async function parseDocument(fileUrl: string, prompt: string, fileType?: string)
   }
 }
 
-export async function detectDocumentTypeFromBase64(
-  base64Data: string,
-  fileType: string
-): Promise<{ document_type: 'prescription' | 'receipt'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other'; confidence: number }> {
-  const prompt = `
-Classify this medical document into one of:
-- prescription
-- receipt
+/** Supported medical document types for classification (Gemini). */
+export type MedicalDocumentType =
+  | 'dr_fee_receipt'
+  | 'dr_prescription'
+  | 'dr_diagnostic_test_advice'
+  | 'diagnostic_test_report'
+  | 'medicine_bill'
+  | 'diagnostic_receipt';
 
-If receipt, determine receipt_type:
-- consultation
-- medicine
-- test
-- other
+export const MEDICAL_DOCUMENT_TYPE_LABELS: Record<MedicalDocumentType, string> = {
+  dr_fee_receipt: 'Dr. fee receipt',
+  dr_prescription: 'Dr. prescription',
+  dr_diagnostic_test_advice: 'Dr. diagnostic test advice',
+  diagnostic_test_report: 'Diagnostic test report',
+  medicine_bill: 'Medicine bill',
+  diagnostic_receipt: 'Diagnostic receipt',
+};
 
-Return ONLY a valid JSON object with this exact structure:
+const MEDICAL_DOCUMENT_TYPES: MedicalDocumentType[] = [
+  'dr_fee_receipt',
+  'dr_prescription',
+  'dr_diagnostic_test_advice',
+  'diagnostic_test_report',
+  'medicine_bill',
+  'diagnostic_receipt',
+];
+
+const IDENTIFY_DOCUMENT_PROMPT = `
+You are a medical document classifier. Look at this image and identify the type of document.
+
+Classify into exactly ONE of these types:
+
+- dr_fee_receipt: A receipt or bill for doctor consultation fees (clinic/hospital visit charges, consultation payment).
+- dr_prescription: A doctor's prescription (medications, dosage, instructions written by a doctor).
+- dr_diagnostic_test_advice: A doctor's advice or slip recommending diagnostic tests/lab tests to be done (test names, no results).
+- diagnostic_test_report: A lab or diagnostic test report showing results, values, reference ranges (e.g. blood test, CBC, lipid panel, radiology report).
+- medicine_bill: A pharmacy or medicine bill/receipt (list of medicines purchased with prices).
+- diagnostic_receipt: A receipt or bill from a diagnostic/lab center for tests done (payment for tests, not the test results).
+
+Return ONLY a valid JSON object with this exact structure (no other text):
 {
-  "document_type": "prescription|receipt",
-  "receipt_type": "consultation|medicine|test|other" (only for receipt),
+  "document_type": "dr_fee_receipt" | "dr_prescription" | "dr_diagnostic_test_advice" | "diagnostic_test_report" | "medicine_bill" | "diagnostic_receipt",
   "confidence": 0.0-1.0
 }
 `;
 
+export interface IdentifiedDocumentType {
+  document_type: MedicalDocumentType;
+  confidence: number;
+}
+
+/**
+ * Identify medical document type using Gemini (first step for scan/upload).
+ * Returns one of the six supported types for routing to extraction and downstream (appointments, vitals, bills).
+ */
+export async function identifyDocumentTypeFromBase64(
+  base64Data: string,
+  fileType: string
+): Promise<IdentifiedDocumentType> {
   try {
-    const extracted = await parseDocumentFromBase64(base64Data, prompt, fileType);
+    const extracted = await parseDocumentFromBase64(base64Data, IDENTIFY_DOCUMENT_PROMPT, fileType);
     if (extracted.json_parse_error) {
-      return { document_type: 'receipt', receipt_type: 'other', confidence: 0.2 };
+      console.warn('⚠️ [GEMINI AI] Document type response was not valid JSON, defaulting to dr_fee_receipt');
+      return { document_type: 'dr_fee_receipt', confidence: 0.2 };
     }
-    const docType = extracted.document_type === 'prescription' ? 'prescription' : 'receipt';
-    const receiptType = ['consultation', 'medicine', 'test', 'other'].includes(extracted.receipt_type)
-      ? extracted.receipt_type
-      : 'other';
+    const docType = extracted.document_type;
+    const validType = MEDICAL_DOCUMENT_TYPES.includes(docType) ? docType : 'dr_fee_receipt';
     return {
-      document_type: docType,
-      receipt_type: docType === 'receipt' ? receiptType : undefined,
-      confidence: extracted.confidence || 0.6
+      document_type: validType,
+      confidence: typeof extracted.confidence === 'number' ? extracted.confidence : 0.6,
     };
   } catch (error: any) {
-    console.error('❌ [GEMINI AI] Error detecting document type:', error.message);
-    return { document_type: 'receipt', receipt_type: 'other', confidence: 0 };
+    console.error('❌ [GEMINI AI] Error identifying document type:', error.message);
+    return { document_type: 'dr_fee_receipt', confidence: 0 };
   }
+}
+
+export async function identifyDocumentType(
+  fileUrl: string,
+  fileType: string
+): Promise<IdentifiedDocumentType> {
+  try {
+    const extracted = await parseDocument(fileUrl, IDENTIFY_DOCUMENT_PROMPT, fileType);
+    if (extracted.json_parse_error) {
+      return { document_type: 'dr_fee_receipt', confidence: 0.2 };
+    }
+    const docType = extracted.document_type;
+    const validType = MEDICAL_DOCUMENT_TYPES.includes(docType) ? docType : 'dr_fee_receipt';
+    return {
+      document_type: validType,
+      confidence: typeof extracted.confidence === 'number' ? extracted.confidence : 0.6,
+    };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] Error identifying document type:', error.message);
+    return { document_type: 'dr_fee_receipt', confidence: 0 };
+  }
+}
+
+/** Map identified type to legacy document_type + receipt_type for existing extraction flows. */
+export function mapIdentifiedTypeToLegacy(
+  identified: IdentifiedDocumentType
+): { document_type: 'prescription' | 'receipt' | 'test_result'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other' } {
+  switch (identified.document_type) {
+    case 'dr_prescription':
+    case 'dr_diagnostic_test_advice':
+      return { document_type: 'prescription', receipt_type: undefined };
+    case 'diagnostic_test_report':
+      return { document_type: 'test_result', receipt_type: undefined };
+    case 'dr_fee_receipt':
+      return { document_type: 'receipt', receipt_type: 'consultation' };
+    case 'medicine_bill':
+      return { document_type: 'receipt', receipt_type: 'medicine' };
+    case 'diagnostic_receipt':
+      return { document_type: 'receipt', receipt_type: 'test' };
+    default:
+      return { document_type: 'receipt', receipt_type: 'other' };
+  }
+}
+
+export async function detectDocumentTypeFromBase64(
+  base64Data: string,
+  fileType: string
+): Promise<{ document_type: 'prescription' | 'receipt'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other'; confidence: number }> {
+  const identified = await identifyDocumentTypeFromBase64(base64Data, fileType);
+  const legacy = mapIdentifiedTypeToLegacy(identified);
+  return {
+    document_type: legacy.document_type === 'test_result' ? 'receipt' : legacy.document_type,
+    receipt_type: legacy.receipt_type ?? 'other',
+    confidence: identified.confidence,
+  };
 }
 
 export async function detectDocumentType(
   fileUrl: string,
   fileType: string
 ): Promise<{ document_type: 'prescription' | 'receipt'; receipt_type?: 'consultation' | 'medicine' | 'test' | 'other'; confidence: number }> {
-  const prompt = `
-Classify this medical document into one of:
-- prescription
-- receipt
-
-If receipt, determine receipt_type:
-- consultation
-- medicine
-- test
-- other
-
-Return ONLY a valid JSON object with this exact structure:
-{
-  "document_type": "prescription|receipt",
-  "receipt_type": "consultation|medicine|test|other" (only for receipt),
-  "confidence": 0.0-1.0
-}
-`;
-
-  try {
-    const extracted = await parseDocument(fileUrl, prompt, fileType);
-    if (extracted.json_parse_error) {
-      return { document_type: 'receipt', receipt_type: 'other', confidence: 0.2 };
-    }
-    const docType = extracted.document_type === 'prescription' ? 'prescription' : 'receipt';
-    const receiptType = ['consultation', 'medicine', 'test', 'other'].includes(extracted.receipt_type)
-      ? extracted.receipt_type
-      : 'other';
-    return {
-      document_type: docType,
-      receipt_type: docType === 'receipt' ? receiptType : undefined,
-      confidence: extracted.confidence || 0.6
-    };
-  } catch (error: any) {
-    console.error('❌ [GEMINI AI] Error detecting document type:', error.message);
-    return { document_type: 'receipt', receipt_type: 'other', confidence: 0 };
-  }
+  const identified = await identifyDocumentType(fileUrl, fileType);
+  const legacy = mapIdentifiedTypeToLegacy(identified);
+  return {
+    document_type: legacy.document_type === 'test_result' ? 'receipt' : legacy.document_type,
+    receipt_type: legacy.receipt_type ?? 'other',
+    confidence: identified.confidence,
+  };
 }
 
 /**
@@ -1004,6 +1063,71 @@ export async function extractTextFromDocument(fileUrl: string, fileType: string)
   } catch (error: any) {
     console.error('❌ [GEMINI AI] Error extracting text:', error.message);
     return '';
+  }
+}
+
+/**
+ * Extract patient monitoring/vitals data from CSV or spreadsheet text using Gemini.
+ * Handles various column names, formats, and "--" for missing values.
+ * Returns array of readings: { recorded_at, heart_rate, breath_rate, spo2, temperature, systolic_bp, diastolic_bp, movement }
+ */
+export async function extractMonitoringDataFromCsvText(csvOrTableText: string): Promise<{
+  readings: Array<{
+    recorded_at: string;
+    heart_rate: number | null;
+    breath_rate: number | null;
+    spo2: number | null;
+    temperature: number | null;
+    systolic_bp: number | null;
+    diastolic_bp: number | null;
+    movement: number | null;
+  }>;
+}> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  const prompt = `You are a medical data extraction assistant. Extract patient monitoring/vitals data from the following CSV or tabular data.
+
+The data may have columns with names like: Timestamp (Device UTC timestamp), HeartRate (BPM), BreathRate (RR), Spo2 (%), Temperature (°F), Systolic BP (mmHg), Diastolic BP (mmHg), Movement, Occupancy, etc.
+- "Timestamp" or "recorded_at" or "datetime" = when the reading was taken. Convert to ISO 8601 format (e.g. 2026-01-13T00:00:00.000Z).
+- "HeartRate" or "heart_rate" = beats per minute (number)
+- "BreathRate" or "breath_rate" = respiratory rate (number)
+- "Spo2" or "spo2" = oxygen saturation % (number)
+- "Temperature" or "temperature" = in °F (number)
+- "Systolic BP" or "systolic_bp" = mmHg (number)
+- "Diastolic BP" or "diastolic_bp" = mmHg (number)
+- "Movement" = 0 (No Movement) or 1 (Movement). Treat "0 - No Movement", "Off Bed", "No" as 0; "1 - Movement", "On Bed", "Yes" as 1.
+- Ignore "Occupancy" and any other columns not listed above.
+- Treat "--", empty, "N/A", "NA" as null for numeric fields.
+- For dates: "1/13/2026 12:00:00 AM" → ISO format. Assume UTC if no timezone.
+
+Return ONLY valid JSON in this exact format (no markdown, no explanation):
+{"readings":[{"recorded_at":"2026-01-13T00:00:00.000Z","heart_rate":72,"breath_rate":16,"spo2":98,"temperature":98.6,"systolic_bp":120,"diastolic_bp":80,"movement":0},...]}
+
+Each reading must have: recorded_at (string, ISO), heart_rate, breath_rate, spo2, temperature, systolic_bp, diastolic_bp, movement (all number or null).
+Extract ALL data rows. Do not skip any rows.
+
+DATA:
+\`\`\`
+${csvOrTableText}
+\`\`\``;
+
+  try {
+    const model = genAI.getGenerativeModel({ model: getGeminiModelName() });
+    const result = await model.generateContent([prompt]);
+    const response = await result.response;
+    const text = response.text();
+    const parsed = parseGeminiJson(text);
+    if (parsed.json_parse_error) {
+      console.warn('⚠️ [GEMINI AI] Monitoring extraction response not valid JSON:', text?.substring(0, 300));
+      throw new Error('Gemini did not return valid JSON');
+    }
+    const readings = Array.isArray(parsed?.readings) ? parsed.readings : [];
+    return { readings };
+  } catch (error: any) {
+    console.error('❌ [GEMINI AI] extractMonitoringDataFromCsvText error:', error.message);
+    throw error;
   }
 }
 

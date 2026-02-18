@@ -6,7 +6,19 @@ import {
   Receipt,
   // Patient // Not yet implemented
 } from '../models-postgres';
-import { extractReceiptData, extractReceiptDataFromBase64, extractPrescriptionData, extractPrescriptionDataFromBase64, ExtractedReceiptData, detectDocumentType, detectDocumentTypeFromBase64 } from '../services/geminiAIService';
+import {
+  extractReceiptData,
+  extractReceiptDataFromBase64,
+  extractPrescriptionData,
+  extractPrescriptionDataFromBase64,
+  extractTestResultData,
+  extractTestResultDataFromBase64,
+  ExtractedReceiptData,
+  identifyDocumentType,
+  identifyDocumentTypeFromBase64,
+  mapIdentifiedTypeToLegacy,
+  MEDICAL_DOCUMENT_TYPE_LABELS,
+} from '../services/geminiAIService';
 import { Op } from 'sequelize';
 
 /**
@@ -122,7 +134,9 @@ export const extractReceiptDataOnly = async (req: AuthRequest, res: Response) =>
 };
 
 /**
- * Auto-detect document type and extract data accordingly
+ * First identify document type with Gemini, then extract data accordingly.
+ * Document types: Dr. fee receipt, Dr. prescription, Dr. diagnostic test advice,
+ * Diagnostic test report, Medicine bill, Diagnostic receipt.
  */
 export const extractDocumentDataOnly = async (req: AuthRequest, res: Response) => {
   try {
@@ -141,35 +155,58 @@ export const extractDocumentDataOnly = async (req: AuthRequest, res: Response) =
       return res.status(400).json({ message: 'Either file_url or file_base64 is required' });
     }
 
-    let detection = null;
-    if (file_base64) {
-      detection = await detectDocumentTypeFromBase64(file_base64, file_type || 'image/jpeg');
-    } else if (file_url) {
-      detection = await detectDocumentType(file_url, file_type || 'image/jpeg');
-    }
+    // Step 1: Identify document type using Gemini (one of the six medical document types)
+    const identified = file_base64
+      ? await identifyDocumentTypeFromBase64(file_base64, file_type || 'image/jpeg')
+      : await identifyDocumentType(file_url, file_type || 'image/jpeg');
 
-    if (!detection) {
-      return res.status(500).json({ message: 'Failed to detect document type' });
-    }
+    const document_type = identified.document_type;
+    const document_type_label = MEDICAL_DOCUMENT_TYPE_LABELS[document_type] || document_type;
+    const legacy = mapIdentifiedTypeToLegacy(identified);
 
-    if (detection.document_type === 'prescription') {
+    const detection = {
+      document_type,
+      document_type_label,
+      confidence: identified.confidence,
+      legacy_document_type: legacy.document_type,
+      receipt_type: legacy.receipt_type,
+    };
+
+    console.log('📄 [DOC EXTRACT] Identified document type:', document_type_label, `(${document_type}), confidence: ${identified.confidence}`);
+
+    // Step 2: Route to the appropriate extractor
+    if (legacy.document_type === 'prescription') {
       const extracted = file_base64
         ? await extractPrescriptionDataFromBase64(file_base64, file_type || 'image/jpeg')
         : await extractPrescriptionData(file_url, file_type || 'image/jpeg');
       return res.status(200).json({
-        document_type: detection.document_type,
+        document_type,
+        document_type_label,
         extracted_data: extracted,
         detection,
       });
     }
 
-    const receiptType = detection.receipt_type || 'other';
+    if (legacy.document_type === 'test_result') {
+      const extracted = file_base64
+        ? await extractTestResultDataFromBase64(file_base64, file_type || 'image/jpeg')
+        : await extractTestResultData(file_url, file_type || 'image/jpeg');
+      return res.status(200).json({
+        document_type,
+        document_type_label,
+        extracted_data: extracted,
+        detection,
+      });
+    }
+
+    const receiptType = legacy.receipt_type || 'other';
     const extractedData = file_base64
       ? await extractReceiptDataFromBase64(file_base64, file_type || 'image/jpeg', receiptType)
       : await extractReceiptData(file_url, file_type || 'image/jpeg', receiptType);
 
     return res.status(200).json({
-      document_type: 'receipt',
+      document_type,
+      document_type_label,
       receipt_type: receiptType,
       extracted_data: extractedData,
       detection,

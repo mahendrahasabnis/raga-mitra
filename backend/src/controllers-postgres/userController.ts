@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Op, QueryTypes } from 'sequelize';
+import bcrypt from 'bcrypt';
 
 // Lazy get models to avoid initialization issues
 const getModels = async () => {
@@ -317,35 +318,74 @@ export const createOrGetDoctor = async (req: Request, res: Response) => {
 
     const { SharedUser, PlatformPrivilege } = await getModels();
     if (!SharedUser) {
-      console.error('❌ [DOCTOR CREATE] SharedUser model not available');
-      return res.status(503).json({ message: 'Service initializing, please retry' });
+      console.error('❌ [DOCTOR CREATE] SharedUser model not available (shared DB not connected)');
+      return res.status(503).json({
+        message: 'Shared user service unavailable. Start Cloud SQL Proxy for platforms_99 or check SHARED_DB_* env.',
+        code: 'SHARED_DB_UNAVAILABLE'
+      });
     }
 
-    let user = await SharedUser.findOne({ where: { phone } });
+    let user;
+    try {
+      user = await SharedUser.findOne({ where: { phone } });
+    } catch (dbErr: any) {
+      const msg = dbErr?.message || String(dbErr);
+      console.error('❌ [DOCTOR CREATE] Shared DB query failed:', msg);
+      if (/relation "users" does not exist|ECONNREFUSED|ETIMEDOUT|connect/i.test(msg)) {
+        return res.status(503).json({
+          message: 'Shared user database unavailable. Ensure platforms_99 is reachable (e.g. Cloud SQL Proxy).',
+          code: 'SHARED_DB_UNAVAILABLE',
+          error: msg
+        });
+      }
+      throw dbErr;
+    }
+
+    // Shared DB may have an enum for global_role that doesn't include 'doctor'. Use 'user' and set doctor in platform_privileges.
+    const globalRole = 'user';
+
     if (!user) {
       const displayName = name || phone;
-      user = await SharedUser.create({
-        phone,
-        name: displayName,
-        global_role: 'doctor',
-        phone_verified: false,
-        is_active: true
-      });
-    } else {
-      const currentRole = (user.global_role || '').toLowerCase();
-      if (currentRole !== 'doctor') {
-        await user.update({ global_role: 'doctor', name: name || user.name || phone });
+      try {
+        user = await SharedUser.create({
+          phone,
+          name: displayName,
+          global_role: globalRole,
+          phone_verified: false,
+          is_active: true,
+          pin_hash: bcrypt.hashSync('__no_pin__', 10)  // shared DB NOT NULL; doctor has not set a PIN yet
+        });
+      } catch (createErr: any) {
+        const msg = createErr?.message || String(createErr);
+        console.error('❌ [DOCTOR CREATE] SharedUser.create failed:', msg, createErr?.errors);
+        if (/relation "users" does not exist|ECONNREFUSED|ETIMEDOUT|connect|unique|duplicate|enum_users_global_role/i.test(msg)) {
+          return res.status(503).json({
+            message: 'Shared user database unavailable or constraint error.',
+            code: 'SHARED_DB_UNAVAILABLE',
+            error: msg
+          });
+        }
+        throw createErr;
       }
+    } else {
+      const nameToSet = name || user.name || phone;
+      await user.update({ name: nameToSet });
+    }
+
+    const userId = user?.id;
+    if (!userId || String(userId) === 'undefined') {
+      console.error('❌ [DOCTOR CREATE] User has no valid id:', userId);
+      return res.status(500).json({ message: 'Failed to create doctor: no user id returned', error: 'INVALID_USER_ID' });
     }
 
     if (PlatformPrivilege) {
       try {
         const existingPriv = await PlatformPrivilege.findOne({
-          where: { user_id: user.id, platform_name: 'aarogya-mitra' }
+          where: { user_id: userId, platform_name: 'aarogya-mitra' }
         });
         if (!existingPriv) {
           await PlatformPrivilege.create({
-            user_id: user.id,
+            user_id: userId,
             platform_name: 'aarogya-mitra',
             roles: ['doctor'],
             permissions: [],
@@ -364,14 +404,22 @@ export const createOrGetDoctor = async (req: Request, res: Response) => {
 
     return res.json({
       user: {
-        id: user.id,
+        id: userId,
         name: user.name || user.phone,
         phone: user.phone,
-        role: user.global_role || null
+        role: 'doctor'
       }
     });
   } catch (error: any) {
-    console.error('❌ [DOCTOR CREATE] Error:', error);
-    res.status(500).json({ message: 'Failed to create doctor', error: error.message });
+    console.error('❌ [DOCTOR CREATE] Error:', error?.message, error?.stack);
+    const msg = error?.message || String(error);
+    if (/relation "users" does not exist|ECONNREFUSED|ETIMEDOUT|connect/i.test(msg)) {
+      return res.status(503).json({
+        message: 'Shared user database unavailable.',
+        code: 'SHARED_DB_UNAVAILABLE',
+        error: msg
+      });
+    }
+    res.status(500).json({ message: 'Failed to create doctor', error: msg });
   }
 };

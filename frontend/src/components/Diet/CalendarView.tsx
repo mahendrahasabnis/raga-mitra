@@ -17,13 +17,26 @@ interface CalendarViewProps {
   viewMode?: "day" | "week";
   initialDate?: string;
   readOnly?: boolean;
+  /** When the visible week changes (week view), called with start and end date keys YYYY-MM-DD */
+  onWeekChange?: (weekStart: string, weekEnd: string) => void;
+  /** Increment to force refetch (e.g. after apply/remove template) */
+  refreshKey?: number;
 }
+
+const getLocalDateKey = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
 
 const CalendarView: React.FC<CalendarViewProps> = ({
   selectedClient,
   viewMode = "week",
   initialDate,
   readOnly = false,
+  onWeekChange,
+  refreshKey = 0,
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [entries, setEntries] = useState<any[]>([]);
@@ -44,7 +57,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
   useEffect(() => {
     fetchEntries();
-  }, [currentDate, selectedClient]);
+  }, [currentDate, selectedClient, refreshKey]);
+
+  useEffect(() => {
+    if (viewMode === "week" && onWeekChange) {
+      const start = getWeekStart(currentDate);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      onWeekChange(getLocalDateKey(start), getLocalDateKey(end));
+    }
+  }, [currentDate, viewMode, onWeekChange]);
 
   useEffect(() => {
     fetchKeyVitals();
@@ -83,8 +105,8 @@ const CalendarView: React.FC<CalendarViewProps> = ({
 
       const res = await dietApi.getCalendarEntries(
         selectedClient || undefined,
-        startDate.toISOString().split("T")[0],
-        endDate.toISOString().split("T")[0]
+        getLocalDateKey(startDate),
+        getLocalDateKey(endDate)
       );
       setEntries(res.entries || []);
     } catch (error) {
@@ -95,7 +117,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const getDateKey = (date: Date) => {
-    return date.toISOString().split("T")[0];
+    return getLocalDateKey(date);
   };
 
   const formatCompactDate = (date: Date) => {
@@ -130,7 +152,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const formatVitalLabel = (label: string) => {
-    const normalized = label.toLowerCase();
+    const normalized = (label || "").toLowerCase();
     if (normalized.includes("weight")) return "Weight";
     if (normalized.includes("bmi")) return "BMI";
     if (normalized.includes("hba1c")) return "HbA1c";
@@ -303,16 +325,16 @@ const CalendarView: React.FC<CalendarViewProps> = ({
     if (readOnly) return;
     if (entry?.sessions?.length > 0) {
       const session = entry.sessions[0];
-      navigate(`/app/diet/${dateKey}?sessionId=${session.id}`);
+      navigate(`/app/diet/session/${dateKey}?sessionId=${session.id}`);
     } else {
-      navigate(`/app/diet/${dateKey}`);
+      navigate(`/app/diet/session/${dateKey}`);
     }
   };
 
   const handleSessionClick = (date: Date, sessionId: string) => {
     if (readOnly) return;
     const dateKey = getDateKey(date);
-    navigate(`/app/diet/${dateKey}?sessionId=${sessionId}`);
+    navigate(`/app/diet/session/${dateKey}?sessionId=${sessionId}`);
   };
 
   const openDatePicker = () => {
@@ -355,7 +377,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
             <input
               ref={datePickerRef}
               type="date"
-              value={currentDate.toISOString().split("T")[0]}
+              value={getLocalDateKey(currentDate)}
               onChange={(e) => setCurrentDate(new Date(e.target.value))}
               className="hidden"
             />
@@ -375,10 +397,13 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           const vitals = keyVitals.length > 0 ? keyVitals : getRandomVitalsForDate(formatCompactDate(date));
 
           return (
-            <button
+            <div
               key={dateKey}
+              role="button"
+              tabIndex={0}
               onClick={() => handleDayClick(date)}
-              className="card p-4 text-left hover:border-blue-400/40 transition"
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleDayClick(date); } }}
+              className="card p-4 text-left hover:border-blue-400/40 transition cursor-pointer"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="font-semibold">
@@ -392,11 +417,12 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                   {sessions.map((session: any, idx: number) => (
                     <button
                       key={session.id}
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         handleSessionClick(date, session.id);
                       }}
-                      className="text-xs text-gray-300 hover:text-white block"
+                      className="text-xs text-gray-300 hover:text-white block w-full text-left"
                     >
                       {idx + 1}. {session.session_name}
                     </button>
@@ -412,7 +438,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
                   </div>
                 ))}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

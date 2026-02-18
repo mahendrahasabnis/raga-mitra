@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User } from "lucide-react";
+import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User, LayoutDashboard } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useAuth } from "../../contexts/AuthContext";
+import { ClientProvider } from "../../contexts/ClientContext";
 import { resourcesApi } from "../../services/api";
 
 const tabs = [
   { to: "/app/today", label: "Today", icon: Home },
+  { to: "/app/dash", label: "Dash", icon: LayoutDashboard },
   { to: "/app/health", label: "Health", icon: HeartPulse },
   { to: "/app/fitness", label: "Fitness", icon: Dumbbell },
   { to: "/app/diet", label: "Diet", icon: Salad },
@@ -26,9 +28,22 @@ const AppShell: React.FC<Props> = ({ children }) => {
     return (localStorage.getItem("theme") as "dark" | "light") || "dark";
   });
   const [clients, setClients] = useState<Array<{ id: string; name: string; phone: string; role?: string }>>([]);
-  const [selectedClient, setSelectedClient] = useState<string | null>(null);
+  const [selectedClient, setSelectedClient] = useState<string | null>(() => localStorage.getItem("client-context-id"));
   const [clientSearch, setClientSearch] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [patientFromDash, setPatientFromDash] = useState<{ id: string; name: string; phone: string } | null>(null);
+
+  // Read client from URL during render so it's available immediately when navigating from Dash
+  const urlClient = useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("client")?.trim() || null;
+  }, [location.search]);
+
+  const effectiveSelectedClient = urlClient || selectedClient;
+
+  // Use patientFromDash from location.state when navigating from Dash (available on first render)
+  const statePatient = (location.state as { patientFromDash?: { id: string; name: string; phone: string } } | undefined)?.patientFromDash;
+  const effectivePatientFromDash = (urlClient && statePatient?.id === urlClient) ? statePatient : patientFromDash;
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
@@ -44,13 +59,27 @@ const AppShell: React.FC<Props> = ({ children }) => {
       localStorage.setItem("client-context-id", selectedClient);
     } else {
       localStorage.removeItem("client-context-id");
+      setPatientFromDash(null);
     }
   }, [selectedClient]);
+
+  // Sync selectedClient from URL when navigating from Dash (or any page with ?client=)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const clientId = params.get("client")?.trim();
+    const state = location.state as { patientFromDash?: { id: string; name: string; phone: string } } | undefined;
+    if (clientId) {
+      setSelectedClient(clientId);
+      if (state?.patientFromDash && state.patientFromDash.id === clientId) {
+        setPatientFromDash(state.patientFromDash);
+      }
+    }
+  }, [location.search, location.state]);
 
   const hasResourceRole = useMemo(() => {
     const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
     const roles = (plat?.roles || []).concat(user?.role ? [user.role] : []);
-    return roles.some((r) => ['doctor', 'fitnesstrainer', 'fitness trainer', 'dietitian', 'dietition', 'nutritionist'].includes(r.toLowerCase()));
+    return roles.some((r) => r && ['doctor', 'fitnesstrainer', 'fitness trainer', 'dietitian', 'dietition', 'nutritionist'].includes(String(r).toLowerCase()));
   }, [user]);
 
   useEffect(() => {
@@ -77,6 +106,15 @@ const AppShell: React.FC<Props> = ({ children }) => {
           });
           console.log('🟢 [APPSHELL] Mapped clients:', mappedClients);
           setClients(mappedClients);
+          // Clear stored client only if list loaded and client is no longer in it.
+          // Do NOT clear when URL has ?client= — user explicitly navigated to view that patient (e.g. from Dash).
+          const urlClient = new URLSearchParams(window.location.search).get("client")?.trim();
+          if (mappedClients.length > 0 && !urlClient) {
+            setSelectedClient((prev) => {
+              if (!prev) return prev;
+              return mappedClients.some((c: { id: string }) => c.id === prev) ? prev : null;
+            });
+          }
         } else if (clientsList && typeof clientsList === 'object') {
           console.warn('🟢 [APPSHELL] Clients is not an array, using empty array');
           setClients([]);
@@ -89,7 +127,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
       }
     };
     fetchClients();
-  }, [hasResourceRole]);
+  }, [hasResourceRole, selectedClient]);
 
   const filteredClients = useMemo(() => {
     if (!clientSearch) return clients;
@@ -100,26 +138,33 @@ const AppShell: React.FC<Props> = ({ children }) => {
   }, [clients, clientSearch]);
 
   const selectedClientLabel = useMemo(() => {
-    if (!selectedClient) return "My data";
-    const client = clients.find((c) => c.id === selectedClient);
+    if (!effectiveSelectedClient) return "My data";
+    if (effectivePatientFromDash && effectivePatientFromDash.id === effectiveSelectedClient) {
+      const { name, phone } = effectivePatientFromDash;
+      if (name && phone) return `${name} - ${phone}`;
+      return name || phone || "My data";
+    }
+    const client = clients.find((c) => c.id === effectiveSelectedClient);
     if (!client) return "My data";
     const name = client.name || "";
     const phone = client.phone || "";
     if (name && phone) return `${name} - ${phone}`;
     return name || phone || "My data";
-  }, [clients, selectedClient]);
+  }, [clients, effectiveSelectedClient, effectivePatientFromDash]);
 
   const selectedClientName = useMemo(() => {
-    if (!selectedClient) return "";
-    const client = clients.find((c) => c.id === selectedClient);
+    if (!effectiveSelectedClient) return "";
+    if (effectivePatientFromDash && effectivePatientFromDash.id === effectiveSelectedClient) return effectivePatientFromDash.name || effectivePatientFromDash.phone || "";
+    const client = clients.find((c) => c.id === effectiveSelectedClient);
     return client?.name || client?.phone || "";
-  }, [clients, selectedClient]);
+  }, [clients, effectiveSelectedClient, effectivePatientFromDash]);
 
   const selectedClientPhone = useMemo(() => {
-    if (!selectedClient) return "";
-    const client = clients.find((c) => c.id === selectedClient);
+    if (!effectiveSelectedClient) return "";
+    if (effectivePatientFromDash && effectivePatientFromDash.id === effectiveSelectedClient) return effectivePatientFromDash.phone || "";
+    const client = clients.find((c) => c.id === effectiveSelectedClient);
     return client?.phone || "";
-  }, [clients, selectedClient]);
+  }, [clients, effectiveSelectedClient, effectivePatientFromDash]);
 
   const selectedClientPhoneDigits = useMemo(() => {
     return (selectedClientPhone || "").replace(/[^0-9+]/g, "");
@@ -133,15 +178,19 @@ const AppShell: React.FC<Props> = ({ children }) => {
   }, [clientSearch, filteredClients]);
 
   const navTabs = useMemo(() => {
-    if (hasResourceRole && selectedClient) {
+    if (hasResourceRole && effectiveSelectedClient) {
       return tabs.filter((t) => t.to !== "/app/resources");
     }
+    // Dash tab only for doctor/fitness trainer/dietitian
+    if (!hasResourceRole) {
+      return tabs.filter((t) => t.to !== "/app/dash");
+    }
     return tabs;
-  }, [hasResourceRole, selectedClient]);
+  }, [hasResourceRole, effectiveSelectedClient]);
 
   const rolesLabel = useMemo(() => {
     const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
-    const roles = (plat?.roles || []).filter((r) => r && r.toLowerCase() !== 'guest');
+    const roles = (plat?.roles || []).filter((r) => r && String(r).toLowerCase() !== 'guest');
     return roles.join(", ");
   }, [user]);
 
@@ -257,6 +306,38 @@ const AppShell: React.FC<Props> = ({ children }) => {
                 </button>
             </div>
           </div>
+          {effectiveSelectedClient && (
+            <div
+              className={`px-3 py-2 flex items-center justify-between gap-3 rounded-xl ${
+              theme === "light"
+                ? "bg-emerald-500/25 border border-emerald-400/50 text-emerald-900"
+                : "bg-emerald-500/30 border border-emerald-400/40 text-emerald-100"
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <User className="h-4 w-4 flex-shrink-0 text-emerald-600" />
+              <span className="font-semibold truncate">
+                Viewing patient data: {selectedClientName || effectiveSelectedClient}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedClient(null);
+                const params = new URLSearchParams(location.search);
+                params.delete("client");
+                const search = params.toString();
+                navigate({ pathname: location.pathname, search: search ? `?${search}` : "" }, { replace: true });
+              }}
+              className={`flex-shrink-0 text-xs font-medium px-2 py-1 rounded-lg transition ${
+                theme === "light"
+                  ? "bg-emerald-500/40 hover:bg-emerald-500/60 text-emerald-900"
+                  : "bg-emerald-500/40 hover:bg-emerald-500/60 text-emerald-100"
+              }`}
+            >
+              Clear
+            </button>
+          </div>
+          )}
         </div>
       </header>
       {clientPickerOpen && (
@@ -287,7 +368,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
                   setSelectedClient(null);
                   setClientPickerOpen(false);
                 }}
-                className="w-full text-left p-3 rounded-lg bg-white/5 hover:bg-white/10 transition"
+                className={`w-full text-left p-3 rounded-lg transition ${theme === "light" ? "bg-slate-100 hover:bg-slate-200 text-slate-800" : "bg-white/5 hover:bg-white/10"}`}
               >
                 My data
               </button>
@@ -297,6 +378,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
                 const displayText = displayName
                   ? (displayPhone ? `${displayName} - ${displayPhone}` : displayName)
                   : (displayPhone || 'Unknown');
+                const isSelected = effectiveSelectedClient === c.id;
                 return (
                   <button
                     key={c.id}
@@ -305,7 +387,13 @@ const AppShell: React.FC<Props> = ({ children }) => {
                       setClientPickerOpen(false);
                     }}
                     className={`w-full text-left p-3 rounded-lg transition ${
-                      selectedClient === c.id ? "bg-emerald-500/20 text-emerald-200" : "bg-white/5 hover:bg-white/10"
+                      isSelected
+                        ? theme === "light"
+                          ? "bg-emerald-500/30 text-emerald-900"
+                          : "bg-emerald-500/20 text-emerald-200"
+                        : theme === "light"
+                          ? "bg-slate-100 hover:bg-slate-200 text-slate-800"
+                          : "bg-white/5 hover:bg-white/10"
                     }`}
                   >
                     {displayText}
@@ -313,7 +401,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
                 );
               })}
               {filteredClients.length === 0 && (
-                <div className="text-sm text-gray-400 text-center py-6">No clients found</div>
+                <div className={`text-sm text-center py-6 ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>No clients found</div>
               )}
             </div>
           </div>
@@ -321,7 +409,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
       )}
 
       <main className="flex-1 overflow-y-auto pb-24 px-4 pt-4">
-        {children}
+        <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
       </main>
 
       <nav className={`fixed bottom-0 left-0 right-0 z-30 backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)' }}>

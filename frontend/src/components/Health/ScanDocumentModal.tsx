@@ -17,6 +17,9 @@ interface ScanDocumentModalProps {
 
 type DocumentType = "prescription" | "bill";
 
+/** Document types that support linking to an appointment (show "Add appointment and save ..."). */
+const APPOINTMENT_CAPABLE_DOC_TYPES = ["dr_fee_receipt", "dr_prescription", "dr_diagnostic_test_advice"];
+
 const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
   isOpen,
   onClose,
@@ -26,6 +29,7 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
 }) => {
   const [documentType, setDocumentType] = useState<DocumentType>("prescription");
   const [billType, setBillType] = useState("Consulting");
+  const [identifiedDocType, setIdentifiedDocType] = useState<string>("");
   const [files, setFiles] = useState<File[]>([]);
   const [processing, setProcessing] = useState(false);
   const [extracted, setExtracted] = useState<any>(null);
@@ -39,9 +43,14 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
   const [previewBase64, setPreviewBase64] = useState<string>("");
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
+  const showAppointmentFlow =
+    APPOINTMENT_CAPABLE_DOC_TYPES.includes(identifiedDocType) ||
+    (!identifiedDocType && documentType === "prescription");
+
   const resetState = () => {
     setDocumentType("prescription");
     setBillType("Consulting");
+    setIdentifiedDocType("");
     setFiles([]);
     setProcessing(false);
     setExtracted(null);
@@ -205,16 +214,21 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
         file_base64: extractionBase64,
         file_type: extractionType,
       });
+      // Prefer backend-identified document type label (e.g. "Dr. fee receipt", "Medicine bill")
+      const documentTypeLabel = res.document_type_label || res.detection?.document_type_label;
       const docType = res.document_type || res.detection?.document_type || "receipt";
       const receiptType = res.receipt_type || res.detection?.receipt_type || "other";
-      const label = [docType, receiptType !== "other" ? receiptType : ""].filter(Boolean).join(" / ");
+      const label = documentTypeLabel || [docType, receiptType !== "other" ? receiptType : ""].filter(Boolean).join(" / ");
       setDetectedTypeLabel(label);
-      setDocumentType(docType === "prescription" ? "prescription" : "bill");
-      if (docType !== "prescription") {
+      setIdentifiedDocType(docType);
+      // Map identified types: prescription-like → prescription; receipts/bills/test report → bill
+      const isPrescriptionLike = ["prescription", "dr_prescription", "dr_diagnostic_test_advice"].includes(docType);
+      setDocumentType(isPrescriptionLike ? "prescription" : "bill");
+      if (!isPrescriptionLike) {
         const mappedBillType =
-          receiptType === "consultation" ? "Consulting" :
-          receiptType === "medicine" ? "Medicine" :
-          receiptType === "test" ? "Diagnostics" : "Other";
+          docType === "dr_fee_receipt" || receiptType === "consultation" ? "Consulting" :
+          docType === "medicine_bill" || receiptType === "medicine" ? "Medicine" :
+          docType === "diagnostic_receipt" || docType === "diagnostic_test_report" || receiptType === "test" ? "Diagnostics" : "Other";
         setBillType(mappedBillType);
       }
       setExtracted({
@@ -232,7 +246,7 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
 
   const extractedDate = useMemo(() => {
     if (!extracted) return null;
-    return extracted.prescription_date || extracted.receipt_date || extracted.follow_up_date || null;
+    return extracted.prescription_date || extracted.receipt_date || extracted.follow_up_date || extracted.test_date || null;
   }, [extracted]);
 
   const extractedTime = useMemo(() => {
@@ -458,6 +472,200 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
     }
   };
 
+  /** Save document data only (no appointment picker): diagnostic = vitals only; bills = appointment + bill items. */
+  const saveDocDataOnly = async () => {
+    if (!extracted) return;
+    setProcessing(true);
+    try {
+      const date = overrideDate || extractedDate ? String(extractedDate || overrideDate).slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+      // Diagnostic test report: save file to GCP first, then process (extract and save vitals only; no appointment).
+      if (identifiedDocType === "diagnostic_test_report") {
+        const testDate = extracted.test_date || date;
+        const vitals = (Array.isArray(extracted.parameters) ? extracted.parameters : [])
+          .filter((p: any) => p.parameter_name && p.value !== undefined && p.value !== null)
+          .map((p: any) => {
+            const numVal = typeof p.value === "number" ? p.value : parseFloat(String(p.value));
+            if (Number.isNaN(numVal)) return null;
+            const refRange =
+              p.normal_range_min != null || p.normal_range_max != null
+                ? `${p.normal_range_min ?? ""}-${p.normal_range_max ?? ""}`.trim()
+                : undefined;
+            return {
+              parameter: p.parameter_name,
+              value: numVal,
+              unit: p.unit || "",
+              measured_at: testDate,
+              reference_range: refRange,
+              client_id: selectedClient,
+            };
+          })
+          .filter(Boolean);
+
+        // 1) Save file to GCP bucket first (backend uploads to GCS then stores metadata).
+        if (extracted._file) {
+          const { blob, contentType, fileName } = extracted._file;
+          const fileBase64 = await toBase64(blob);
+          await healthApi.uploadReport({
+            file_base64: fileBase64,
+            file_type: contentType,
+            file_name: fileName || (extracted.test_name ? `${extracted.test_name} report` : "Diagnostic report"),
+            client_id: selectedClient,
+          });
+        }
+        // 2) Then process: save vitals.
+        if (vitals.length > 0) await healthApi.confirmVitals(vitals);
+
+        if (vitals.length > 0 || extracted._file) {
+          onCreated();
+          handleClose();
+        } else {
+          alert("No numeric parameters found in the report to save as vitals.");
+        }
+        setProcessing(false);
+        return;
+      }
+
+      // Medicine bill / diagnostic receipt: create appointment and save bill items (and optionally attach file)
+      if (!extracted._file) {
+        alert("No file to save.");
+        setProcessing(false);
+        return;
+      }
+      const { blob, contentType, fileName } = extracted._file;
+      const datetime = new Date(date);
+      if (overrideTime) {
+        const [h, m] = overrideTime.split(":").map((t) => parseInt(t, 10));
+        datetime.setHours(h || 0, m || 0, 0, 0);
+      } else {
+        datetime.setHours(10, 0, 0, 0);
+      }
+
+      const title =
+        identifiedDocType === "medicine_bill"
+          ? "Medicine bill"
+          : identifiedDocType === "diagnostic_receipt"
+            ? "Diagnostic receipt"
+            : detectedTypeLabel || "Document";
+      const createRes = await healthApi.createAppointment({
+        title,
+        datetime: datetime.toISOString(),
+        location: extracted.pharmacy_name || extracted.diagnostics_center_name || "",
+        notes: extracted.notes || "",
+        status: "completed",
+        client_id: selectedClient,
+      });
+      const appointmentId = createRes.appointment?.id;
+      if (!appointmentId) {
+        alert("Failed to create record.");
+        setProcessing(false);
+        return;
+      }
+
+      const subType =
+        identifiedDocType === "medicine_bill"
+          ? "Medicine"
+          : identifiedDocType === "diagnostic_receipt"
+            ? "Diagnostics"
+            : null;
+      let uploadRes: any = null;
+      let fileUploadSkipped = false;
+      try {
+        const signed = await healthApi.getSignedUploadUrl({
+          appointment_id: appointmentId,
+          category: "bill",
+          file_name: fileName,
+          content_type: contentType,
+        });
+        await fetch(signed.uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": contentType },
+          body: blob,
+        });
+        uploadRes = await healthApi.uploadAppointmentFile(appointmentId, {
+          category: "bill",
+          sub_type: subType,
+          file_url: signed.fileUrl,
+          storage_path: signed.gcsPath,
+          file_name: fileName,
+          file_type: contentType,
+          client_id: selectedClient,
+        });
+      } catch (uploadErr: any) {
+        const code = uploadErr?.response?.data?.code;
+        const status = uploadErr?.response?.status;
+        const msg = String(uploadErr?.response?.data?.message || uploadErr?.message || "").toLowerCase();
+        const gcsUnavailable =
+          code === "GCS_NOT_CONFIGURED" ||
+          code === "GCS_UNAVAILABLE" ||
+          status === 503 ||
+          msg.includes("gcs_bucket") ||
+          msg.includes("not configured") ||
+          msg.includes("upload unavailable");
+        if (gcsUnavailable) {
+          fileUploadSkipped = true;
+          console.warn("File upload skipped (storage not configured). Data will be saved without attachment.");
+        } else {
+          throw uploadErr;
+        }
+      }
+
+      const detailsRes = await healthApi.getAppointmentDetails(appointmentId, selectedClient || undefined);
+      const appointmentDetails = detailsRes.details || {};
+      const fileRef = uploadRes?.file
+        ? { file_id: uploadRes.file.id, file_url: uploadRes.file.file_url, file_name: uploadRes.file.file_name, file_type: uploadRes.file.file_type }
+        : undefined;
+      const billItems: any[] = [];
+      if (Array.isArray(extracted.medicines) && extracted.medicines.length > 0) {
+        extracted.medicines.forEach((med: any) => {
+          billItems.push({
+            category: "Medicine",
+            description: med.name,
+            amount: String(med.total || med.price || extracted.total_amount || ""),
+            gst: String(extracted.tax_amount || ""),
+            ...(fileRef && { file: fileRef }),
+          });
+        });
+      } else if (Array.isArray(extracted.tests) && extracted.tests.length > 0) {
+        extracted.tests.forEach((test: any) => {
+          billItems.push({
+            category: "Diagnostics",
+            description: test.name,
+            amount: String(test.price || extracted.total_amount || ""),
+            gst: String(extracted.tax_amount || ""),
+            ...(fileRef && { file: fileRef }),
+          });
+        });
+      } else {
+        billItems.push({
+          category: subType || "Other",
+          description: extracted.clinic_name || extracted.pharmacy_name || extracted.diagnostics_center_name || title,
+          amount: String(extracted.total_amount || extracted.amount || ""),
+          gst: String(extracted.tax_amount || ""),
+          ...(fileRef && { file: fileRef }),
+        });
+      }
+      await healthApi.updateAppointmentDetails(appointmentId, {
+        client_id: selectedClient,
+        history: appointmentDetails.history || null,
+        prescription: appointmentDetails.prescription || null,
+        bills: { items: billItems },
+        audio_clips: appointmentDetails.audio_clips || [],
+      });
+
+      onCreated();
+      handleClose();
+      if (fileUploadSkipped) {
+        alert("Data saved. Document file could not be uploaded (storage not configured on server).");
+      }
+    } catch (error) {
+      console.error("Failed to save document data:", error);
+      alert("Failed to save. Please try again.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -663,41 +871,55 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
                 </pre>
               )}
 
-              {appointmentCandidates.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm text-gray-300">Select appointment for this document</p>
-                  <div className="space-y-2">
-                    {appointmentCandidates.map((apt) => (
-                      <label key={apt.id} className="flex items-center gap-2 text-sm text-gray-300">
-                        <input
-                          type="radio"
-                          checked={appointmentChoice === apt.id}
-                          onChange={() => setAppointmentChoice(apt.id)}
-                        />
-                        {new Date(apt.datetime || apt.created_at).toLocaleString()} • {apt.doctor_name || apt.doctor_user_id || "Doctor"} • {apt.title || "Appointment"}
-                      </label>
-                    ))}
-                  </div>
-                </div>
+              {showAppointmentFlow && (
+                <>
+                  {appointmentCandidates.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-300">Select appointment for this document</p>
+                      <div className="space-y-2">
+                        {appointmentCandidates.map((apt) => (
+                          <label key={apt.id} className="flex items-center gap-2 text-sm text-gray-300">
+                            <input
+                              type="radio"
+                              checked={appointmentChoice === apt.id}
+                              onChange={() => setAppointmentChoice(apt.id)}
+                            />
+                            {new Date(apt.datetime || apt.created_at).toLocaleString()} • {apt.doctor_name || apt.doctor_user_id || "Doctor"} • {apt.title || "Appointment"}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <label className="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="radio"
+                      checked={appointmentChoice === "new"}
+                      onChange={() => setAppointmentChoice("new")}
+                    />
+                    Create new appointment
+                  </label>
+                </>
               )}
 
-              <label className="flex items-center gap-2 text-sm text-gray-300">
-                <input
-                  type="radio"
-                  checked={appointmentChoice === "new"}
-                  onChange={() => setAppointmentChoice("new")}
-                />
-                Create new appointment
-              </label>
-
               <div className="flex justify-end">
-                <button
-                  className="btn-primary"
-                  onClick={createOrAttachAppointment}
-                  disabled={processing || !appointmentChoice}
-                >
-                  {processing ? "Saving..." : "Save Appointment"}
-                </button>
+                {showAppointmentFlow ? (
+                  <button
+                    className="btn-primary"
+                    onClick={createOrAttachAppointment}
+                    disabled={processing || !appointmentChoice}
+                  >
+                    {processing ? "Saving..." : `Add appointment and save ${detectedTypeLabel || "document"} data`}
+                  </button>
+                ) : (
+                  <button
+                    className="btn-primary"
+                    onClick={saveDocDataOnly}
+                    disabled={processing}
+                  >
+                    {processing ? "Saving..." : `Save ${detectedTypeLabel || "document"} data`}
+                  </button>
+                )}
               </div>
             </div>
           )}

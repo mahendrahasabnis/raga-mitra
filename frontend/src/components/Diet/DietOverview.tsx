@@ -22,7 +22,7 @@ const DietOverview: React.FC<DietOverviewProps> = ({
   return (
     <div className="space-y-4 overflow-x-hidden">
       <div className="grid grid-cols-2 gap-3">
-        <div className="card p-4 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-400/30">
+        <div className="fitness-stat-card fitness-stat-card--blue card p-4 bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-400/30">
           <div className="flex items-center gap-2 mb-2">
             <Target className="h-4 w-4 text-blue-200" />
             <p className="text-xs text-blue-100/80">Completion</p>
@@ -33,7 +33,7 @@ const DietOverview: React.FC<DietOverviewProps> = ({
           </p>
         </div>
 
-        <div className="card p-4 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-400/30">
+        <div className="fitness-stat-card fitness-stat-card--emerald card p-4 bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-400/30">
           <div className="flex items-center gap-2 mb-2">
             <TrendingUp className="h-4 w-4 text-emerald-200" />
             <p className="text-xs text-emerald-100/80">Streak</p>
@@ -44,9 +44,9 @@ const DietOverview: React.FC<DietOverviewProps> = ({
       </div>
 
       {nextSession && (
-        <div className="card p-4">
+        <div className="card p-4 diet-overview-section">
           <div className="flex items-center gap-2 mb-3">
-            <Calendar className="h-5 w-5 text-blue-200" />
+            <Calendar className="h-5 w-5 text-blue-200 diet-overview-section-icon" />
             <h3 className="text-md font-semibold">Next Meal Session</h3>
           </div>
           <div className="space-y-2">
@@ -66,9 +66,9 @@ const DietOverview: React.FC<DietOverviewProps> = ({
       )}
 
       {weekStats && (
-        <div className="card p-4">
+        <div className="card p-4 diet-overview-section">
           <div className="flex items-center gap-2 mb-3">
-            <Clock className="h-5 w-5 text-purple-200" />
+            <Clock className="h-5 w-5 text-purple-200 diet-overview-section-icon" />
             <h3 className="text-md font-semibold">This Week</h3>
           </div>
           <div className="grid grid-cols-3 gap-3">

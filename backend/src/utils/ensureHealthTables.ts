@@ -1,13 +1,91 @@
-import { QueryTypes } from 'sequelize';
-
 let ensured = false;
+
+/** Run a migration batch; log but do not throw so other batches can succeed. */
+const runBatch = async (appDb: any, sql: string, label: string) => {
+  try {
+    await appDb.query(sql);
+    return true;
+  } catch (err: any) {
+    console.error(`⚠️ [HEALTH] ${label} failed:`, err.message || err);
+    return false;
+  }
+};
 
 export const ensureHealthTables = async () => {
   if (ensured) return;
-  try {
-    const db = await import('../config/database-integrated');
-    const appDb = db.appSequelize;
-    await appDb.query(`
+  const db = await import('../config/database-integrated');
+  const appDb = db.appSequelize;
+
+  // Run institution_admissions + monitoring_readings first (required for Live Monitoring)
+  const admissionsOk = await runBatch(appDb, `
+      CREATE TABLE IF NOT EXISTS institution_admissions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        patient_user_id UUID NOT NULL,
+        institution_name VARCHAR(500) NOT NULL,
+        mrn_number VARCHAR(100),
+        bed_number VARCHAR(50),
+        admission_date DATE NOT NULL,
+        condition TEXT,
+        consulting_doctor VARCHAR(255),
+        high_limits JSONB,
+        low_limits JSONB,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_institution_admissions_patient ON institution_admissions (patient_user_id);
+      CREATE INDEX IF NOT EXISTS idx_institution_admissions_date ON institution_admissions (admission_date);
+
+      CREATE TABLE IF NOT EXISTS monitoring_readings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admission_id UUID NOT NULL REFERENCES institution_admissions(id) ON DELETE CASCADE,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        heart_rate DECIMAL(10,2),
+        breath_rate DECIMAL(10,2),
+        spo2 DECIMAL(10,2),
+        temperature DECIMAL(10,2),
+        systolic_bp DECIMAL(10,2),
+        diastolic_bp DECIMAL(10,2),
+        movement SMALLINT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_monitoring_readings_admission ON monitoring_readings (admission_id);
+      CREATE INDEX IF NOT EXISTS idx_monitoring_readings_recorded ON monitoring_readings (admission_id, recorded_at);
+
+      CREATE TABLE IF NOT EXISTS admission_treatments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admission_id UUID NOT NULL REFERENCES institution_admissions(id) ON DELETE CASCADE,
+        recorded_at TIMESTAMPTZ NOT NULL,
+        treatment_name VARCHAR(500) NOT NULL,
+        quantity VARCHAR(100),
+        notes TEXT,
+        doctor_name VARCHAR(255),
+        entered_by_name VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_admission_treatments_admission ON admission_treatments (admission_id);
+      CREATE INDEX IF NOT EXISTS idx_admission_treatments_recorded ON admission_treatments (admission_id, recorded_at);
+    `, 'institution_admissions + monitoring_readings + admission_treatments');
+
+  // Add missing columns to appointments (old schema may have patient_id, appointment_time but not title, doctor_name, doctor_phone)
+  await runBatch(appDb, `
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'appointments') THEN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'title') THEN
+            ALTER TABLE appointments ADD COLUMN title VARCHAR(500);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_name') THEN
+            ALTER TABLE appointments ADD COLUMN doctor_name VARCHAR(255);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_phone') THEN
+            ALTER TABLE appointments ADD COLUMN doctor_phone VARCHAR(100);
+          END IF;
+        END IF;
+      END $$;
+    `, 'appointments migration');
+
+  // Other health tables (may fail if schema differs from existing DB)
+  await runBatch(appDb, `
       -- Medicine Schedules
       CREATE TABLE IF NOT EXISTS medicine_schedules (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -28,6 +106,36 @@ export const ensureHealthTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_medicine_schedules_patient ON medicine_schedules (patient_user_id);
       CREATE INDEX IF NOT EXISTS idx_medicine_schedules_appointment ON medicine_schedules (appointment_id);
       CREATE INDEX IF NOT EXISTS idx_medicine_schedules_active ON medicine_schedules (patient_user_id, is_active) WHERE is_active = TRUE;
+
+      -- Appointments (main list) - doctor id, name, phone stored to avoid users table lookup
+      CREATE TABLE IF NOT EXISTS appointments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        patient_user_id UUID NOT NULL,
+        doctor_user_id UUID,
+        doctor_name VARCHAR(255),
+        doctor_phone VARCHAR(100),
+        datetime TIMESTAMPTZ,
+        title VARCHAR(500),
+        status VARCHAR(50) DEFAULT 'planned',
+        location VARCHAR(500),
+        notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_user_id);
+      CREATE INDEX IF NOT EXISTS idx_appointments_datetime ON appointments (datetime);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'title') THEN
+          ALTER TABLE appointments ADD COLUMN title VARCHAR(500);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_name') THEN
+          ALTER TABLE appointments ADD COLUMN doctor_name VARCHAR(255);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_phone') THEN
+          ALTER TABLE appointments ADD COLUMN doctor_phone VARCHAR(100);
+        END IF;
+      END $$;
 
       -- Appointments Attachments
       CREATE TABLE IF NOT EXISTS appointment_attachments (
@@ -100,11 +208,13 @@ export const ensureHealthTables = async () => {
           ALTER TABLE vital_parameters ADD COLUMN IF NOT EXISTS parameter_name VARCHAR(255);
         END IF;
       END $$;
-    `);
-    ensured = true;
+    `, 'medicine/appointments/vitals');
+
+  ensured = admissionsOk; // Only skip retries when admissions tables exist
+  if (admissionsOk) {
     console.log('✅ [HEALTH] Health module tables ensured in aarogya_mitra');
-  } catch (err: any) {
-    console.error('⚠️ [HEALTH] ensureHealthTables failed:', err.message || err);
+  } else {
+    console.warn('⚠️ [HEALTH] institution_admissions + monitoring_readings failed; will retry on next request.');
   }
 };
 

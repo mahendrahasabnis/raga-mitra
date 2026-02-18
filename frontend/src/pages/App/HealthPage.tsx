@@ -1,32 +1,32 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useSelectedClient } from "../../contexts/ClientContext";
 import { healthApi } from "../../services/api";
-import { Stethoscope, Calendar, Activity, Scan } from "lucide-react";
+import { Stethoscope, Calendar, Activity, Scan, Monitor } from "lucide-react";
 import HealthOverview from "../../components/Health/HealthOverview";
 import AppointmentsList from "../../components/Health/AppointmentsList";
 import VitalsDashboard from "../../components/Health/VitalsDashboard";
+import LiveMonitoringDashboard from "../../components/Health/LiveMonitoringDashboard";
 import ScanDocumentModal from "../../components/Health/ScanDocumentModal";
 
-type TabType = "overview" | "appointments" | "vitals";
+type TabType = "overview" | "appointments" | "vitals" | "live-monitoring";
 
 const HealthPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>("overview");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as TabType | null;
+  const selectedClient = useSelectedClient();
+  const [activeTab, setActiveTab] = useState<TabType>(tabParam && ["overview", "appointments", "vitals", "live-monitoring"].includes(tabParam) ? tabParam : "overview");
   const [appointments, setAppointments] = useState<any[]>([]);
   const [vitals, setVitals] = useState<any[]>([]);
+  const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showScanModal, setShowScanModal] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<string | null>(
-    () => localStorage.getItem("client-context-id")
-  );
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "client-context-id") {
-        setSelectedClient(e.newValue);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    if (tabParam && ["overview", "appointments", "vitals", "live-monitoring"].includes(tabParam)) {
+      setActiveTab(tabParam as TabType);
+    }
+  }, [tabParam]);
 
   useEffect(() => {
     fetchAllData();
@@ -36,16 +36,24 @@ const HealthPage: React.FC = () => {
     setLoading(true);
     try {
       const clientId = selectedClient || undefined;
-      const [apptRes, vitRes] = await Promise.allSettled([
+      const [apptRes, vitRes, reportsRes] = await Promise.allSettled([
         healthApi.getAppointments(clientId),
         healthApi.getVitals(clientId),
+        healthApi.listReports(clientId),
       ]);
 
       if (apptRes.status === "fulfilled") {
         setAppointments(apptRes.value.appointments || []);
       }
       if (vitRes.status === "fulfilled") {
-        setVitals(vitRes.value.vitals || []);
+        const data = vitRes.value;
+        const list = Array.isArray(data?.vitals) ? data.vitals : Array.isArray(data?.data?.vitals) ? data.data.vitals : [];
+        setVitals(list);
+      }
+      if (reportsRes.status === "fulfilled") {
+        const raw = reportsRes.value;
+        const list = Array.isArray(raw) ? raw : (raw?.reports && Array.isArray(raw.reports) ? raw.reports : []);
+        setReports(list);
       }
     } catch (error) {
       console.error("Failed to fetch health data:", error);
@@ -58,6 +66,7 @@ const HealthPage: React.FC = () => {
     { id: "overview", label: "Overview", icon: <Stethoscope className="h-4 w-4" /> },
     { id: "appointments", label: "Appointments", icon: <Calendar className="h-4 w-4" /> },
     { id: "vitals", label: "Vitals", icon: <Activity className="h-4 w-4" /> },
+    { id: "live-monitoring", label: "Live Monitoring", icon: <Monitor className="h-4 w-4" /> },
   ];
 
   const upcomingAppointment = appointments
@@ -99,9 +108,9 @@ const HealthPage: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition ${
+              className={`health-page-tab flex items-center gap-2 px-4 py-2 rounded-lg whitespace-nowrap transition ${
                 activeTab === tab.id
-                  ? "bg-rose-500/20 text-rose-200 border border-rose-400/30"
+                  ? "health-page-tab--active bg-rose-500/20 text-rose-200 border border-rose-400/30"
                   : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
               }`}
             >
@@ -138,10 +147,15 @@ const HealthPage: React.FC = () => {
       {activeTab === "vitals" && (
         <VitalsDashboard
           vitals={vitals}
+          reports={reports}
           loading={loading}
           selectedClient={selectedClient}
           onRefresh={fetchAllData}
         />
+      )}
+
+      {activeTab === "live-monitoring" && (
+        <LiveMonitoringDashboard selectedClient={selectedClient} onRefresh={fetchAllData} />
       )}
 
       {showScanModal && (

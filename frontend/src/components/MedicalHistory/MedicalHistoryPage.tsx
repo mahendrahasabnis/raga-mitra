@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Plus, Scan } from 'lucide-react';
+import { useSelectedClient } from '../../contexts/ClientContext';
 import { medicalHistoryApi } from '../../services/api';
 import PastVisitsList from './PastVisitsList';
 import AddPastVisitModal from './AddPastVisitModal';
@@ -10,19 +11,7 @@ const MedicalHistoryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showScanReceiptModal, setShowScanReceiptModal] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<string | null>(
-    () => localStorage.getItem("client-context-id")
-  );
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "client-context-id") {
-        setSelectedClient(e.newValue);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  const selectedClient = useSelectedClient();
 
   useEffect(() => {
     fetchPastVisits();

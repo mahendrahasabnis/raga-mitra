@@ -44,9 +44,10 @@ const AddParameterModal: React.FC<AddParameterModalProps> = ({
   const [selectedDefinition, setSelectedDefinition] = useState<ParameterDefinition | null>(null);
 
   const availableParameters = Object.values(parameterDefinitions);
+  const term = (searchTerm || "").toLowerCase();
   const filteredParameters = availableParameters.filter(def =>
-    def.parameter_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    def.display_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    (def.parameter_name || "").toLowerCase().includes(term) ||
+    (def.display_name || "").toLowerCase().includes(term)
   );
 
   useEffect(() => {

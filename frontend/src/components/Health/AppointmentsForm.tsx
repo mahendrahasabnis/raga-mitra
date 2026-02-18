@@ -1,7 +1,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
-import { X, Calendar, MapPin, FileText, Upload } from "lucide-react";
+import { X, MapPin, FileText, Upload } from "lucide-react";
 import { healthApi, userApi } from "../../services/api";
 import SelectDropdown from "../UI/SelectDropdown";
+import DateTimeWheelPicker from "../UI/DateTimeWheelPicker";
 
 interface AppointmentsFormProps {
   isOpen: boolean;
@@ -40,6 +41,9 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
   );
   const clinicDatalistId = useId();
   const doctorAbortRef = useRef<AbortController | null>(null);
+  const [newDoctorPhone, setNewDoctorPhone] = useState("");
+  const [newDoctorName, setNewDoctorName] = useState("");
+  const [registeringDoctor, setRegisteringDoctor] = useState(false);
 
   const clinicOptions = useMemo(() => {
     return Array.from(new Set(existingLocations.filter(Boolean)));
@@ -56,7 +60,7 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
   };
 
   useEffect(() => {
-    if (!doctorSearch) {
+    if (!doctorSearch.trim()) {
       setDoctorResults([]);
       return;
     }
@@ -68,7 +72,7 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
       doctorAbortRef.current = controller;
       setDoctorSearching(true);
       try {
-        const searchTerm = normalizePhoneInput(doctorSearch);
+        const searchTerm = doctorSearch.trim();
         const res = await userApi.searchDoctors(searchTerm, { signal: controller.signal });
         const list = res.users || res.results || res.doctors || [];
         const filtered = list.filter((doc: any) => {
@@ -94,36 +98,63 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.datetime?.trim()) {
+      alert("Please select date & time.");
+      return;
+    }
     setLoading(true);
 
     try {
       let doctorUserId = formData.doctor_user_id;
+      let doctorName: string | null = selectedDoctor?.name ?? null;
+      let doctorPhone: string | null = selectedDoctor?.phone ?? null;
       const normalizedSearch = normalizePhoneInput(doctorSearch);
-      const rawDigits = normalizedSearch.replace(/\D/g, "");
-      const hasFullIndiaNumber = rawDigits.length >= 12 || (normalizedSearch.startsWith("+") && rawDigits.length >= 10);
+      const fromNewField = normalizePhoneInput(newDoctorPhone.trim());
+      const phoneToUse = normalizedSearch || fromNewField;
+      const rawDigits = phoneToUse.replace(/\D/g, "");
+      const hasFullIndiaNumber = rawDigits.length >= 12 || (phoneToUse.startsWith("+") && rawDigits.length >= 10);
+      const nameToUse = selectedDoctor?.name || newDoctorName.trim() || undefined;
       if (!doctorUserId && selectedDoctor?.id) {
         doctorUserId = selectedDoctor.id;
+        doctorName = selectedDoctor.name ?? doctorName;
+        doctorPhone = selectedDoctor.phone ?? doctorPhone;
       }
-      if (!doctorUserId && hasFullIndiaNumber) {
-        const created = await userApi.createDoctor({
-          phone: normalizedSearch,
-        });
-        doctorUserId = created.user?.id;
+      if (!doctorUserId && hasFullIndiaNumber && phoneToUse) {
+        try {
+          const created = await userApi.createDoctor({
+            phone: phoneToUse,
+            name: nameToUse,
+          });
+          const user = created.user;
+          if (user?.id) {
+            doctorUserId = user.id;
+            doctorName = user.name ?? doctorName ?? nameToUse ?? null;
+            doctorPhone = user.phone ?? doctorPhone ?? phoneToUse ?? null;
+          }
+        } catch (doctorErr: any) {
+          console.warn("Doctor create failed, saving appointment without doctor link:", doctorErr?.response?.data || doctorErr);
+          doctorUserId = null;
+        }
       }
 
       const payload = {
         ...formData,
         doctor_user_id: doctorUserId || null,
+        doctor_name: doctorName ?? appointment?.doctor_name ?? null,
+        doctor_phone: doctorPhone ?? appointment?.doctor_phone ?? null,
         attachments,
         client_id: clientId,
       };
 
-      if (appointment) {
+      if (appointment?.id) {
         await healthApi.updateAppointment(appointment.id, payload);
       } else {
         await healthApi.createAppointment(payload);
       }
 
+      if ((hasFullIndiaNumber || fromNewField) && !doctorUserId) {
+        alert("Appointment saved. Doctor could not be registered (shared service may be unavailable); you can add them later.");
+      }
       onSuccess();
     } catch (error: any) {
       console.error("Failed to save appointment:", error);
@@ -154,6 +185,36 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
 
   const handleRemoveAttachment = (index: number) => {
     setAttachments(attachments.filter((_, i) => i !== index));
+  };
+
+  const handleRegisterNewDoctor = async () => {
+    const phone = normalizePhoneInput(newDoctorPhone.trim());
+    const rawDigits = phone.replace(/\D/g, "");
+    const hasFullNumber = rawDigits.length >= 12 || (phone.startsWith("+") && rawDigits.length >= 10);
+    if (!hasFullNumber) {
+      alert("Please enter a valid 10-digit phone number (e.g. 9876543210).");
+      return;
+    }
+    setRegisteringDoctor(true);
+    try {
+      const created = await userApi.createDoctor({
+        phone,
+        name: newDoctorName.trim() || undefined,
+      });
+      const user = created.user;
+      if (user?.id) {
+        setFormData((prev) => ({ ...prev, doctor_user_id: user.id }));
+        setSelectedDoctor({ id: user.id, name: user.name || user.phone, phone: user.phone });
+        setDoctorSearch([user.name, user.phone].filter(Boolean).join(" - ") || user.phone);
+        setNewDoctorPhone("");
+        setNewDoctorName("");
+      }
+    } catch (err: any) {
+      console.warn("Doctor register failed:", err?.response?.data || err);
+      alert(err?.response?.data?.message || "Could not register doctor. Try again or save appointment without doctor.");
+    } finally {
+      setRegisteringDoctor(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -188,12 +249,18 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
 
           <div>
             <label className="block text-sm font-medium mb-2">Date & Time *</label>
-            <input
-              type="datetime-local"
+            <DateTimeWheelPicker
               value={formData.datetime}
-              onChange={(e) => setFormData({ ...formData, datetime: e.target.value })}
-              className="input-field w-full"
+              onChange={(v) => setFormData({ ...formData, datetime: v })}
+              placeholder="Select date & time"
+            />
+            <input
+              type="hidden"
+              name="datetime"
+              value={formData.datetime}
               required
+              readOnly
+              aria-hidden
             />
           </div>
 
@@ -224,7 +291,7 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
                 type="text"
                 value={doctorSearch}
                 onChange={(e) => {
-                  setDoctorSearch(normalizePhoneInput(e.target.value));
+                  setDoctorSearch(e.target.value);
                   setSelectedDoctor(null);
                   setFormData((prev) => ({ ...prev, doctor_user_id: "" }));
                 }}
@@ -254,9 +321,41 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
                 </div>
               )}
               {doctorResults.length === 0 && doctorSearch.trim() && !doctorSearching && (
-                <p className="text-xs text-gray-400">
-                  No doctors found. Enter a phone number to create a doctor.
-                </p>
+                <div className="space-y-2 mt-2 p-3 border border-white/10 rounded-lg bg-white/5">
+                  <p className="text-xs text-gray-400">
+                    No doctors found. Register with phone number to add as doctor.
+                  </p>
+                  <div className="grid grid-cols-[1fr,1fr] gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Phone number *</label>
+                      <input
+                        type="tel"
+                        value={newDoctorPhone}
+                        onChange={(e) => setNewDoctorPhone(e.target.value)}
+                        className="input-field w-full text-sm"
+                        placeholder="e.g. 9876543210"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">Name (optional)</label>
+                      <input
+                        type="text"
+                        value={newDoctorName}
+                        onChange={(e) => setNewDoctorName(e.target.value)}
+                        className="input-field w-full text-sm"
+                        placeholder="Doctor name"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRegisterNewDoctor}
+                    disabled={registeringDoctor || !newDoctorPhone.trim()}
+                    className="text-sm btn-primary"
+                  >
+                    {registeringDoctor ? "Registering…" : "Register as doctor"}
+                  </button>
+                </div>
               )}
               {formData.doctor_user_id && (
                 <p className="text-xs text-gray-400">

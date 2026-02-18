@@ -12,6 +12,16 @@ This is a common and recommended development workflow that allows you to:
 - Avoid deploying untested code
 - Work with the same data structure as production
 
+### Quick start (local app + online DB)
+
+1. Copy env files: `./setup-local-dev.sh` (or copy `env.integrated.local.example` → `.env.integrated` and `frontend/env.local.example` → `frontend/.env.local`).
+2. Edit `.env.integrated` with your **online** database credentials (and set `PORT=5001` if 5000 is in use).
+3. Ensure `frontend/.env.local` has `VITE_API_BASE_URL=http://localhost:5001/api`.
+4. **If direct DB connection times out (ETIMEDOUT):** use Cloud SQL Proxy. In **Terminal 1** run: **`./start-cloud-sql-proxy.sh`** (keep it running). In **Terminal 2** run: **`npm run dev:local`**. Your `.env.integrated` should have `DB_HOST=127.0.0.1`, `SHARED_DB_HOST=127.0.0.1`, `DB_SSL=false`.
+5. Otherwise from repo root run: **`npm run dev:local`**.
+
+This starts the **local backend** and **local frontend**, both using your online databases. No deploy needed to test changes.
+
 ## Overview
 
 This setup allows you to:
@@ -182,14 +192,15 @@ npm run install:all
 
 ### Step 6: Start Development Servers
 
-**Option A: Start both frontend and backend together** (recommended):
+**Option A: Start both frontend and backend together** (recommended for local + online DB):
 ```bash
-npm run dev
+npm run dev:local
 ```
+This runs the **integrated** backend (connects to online DBs) and the frontend. Use this instead of `npm run dev` when you want to test against online databases without deploying.
 
 **Option B: Start separately** (in different terminals):
 
-Terminal 1 - Backend:
+Terminal 1 - Backend (integrated, online DB):
 ```bash
 cd backend
 npm run dev:integrated
@@ -200,6 +211,8 @@ Terminal 2 - Frontend:
 cd frontend
 npm run dev
 ```
+
+**Note:** `npm run dev` starts the default backend (index-postgres). Use `npm run dev:local` or `npm run dev:backend:integrated` + frontend for online DB.
 
 ### Step 7: Verify Connection
 

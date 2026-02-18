@@ -36,8 +36,10 @@ router.get('/week-templates/:id', authenticate, dietController.getWeekTemplate);
 router.post('/week-templates', authenticate, dietController.createWeekTemplate);
 router.put('/week-templates/:id', authenticate, dietController.updateWeekTemplate);
 
-// Calendar Entries
+// Calendar Entries (specific paths before :date)
 router.get('/calendar', authenticate, dietController.getCalendarEntries);
+router.post('/calendar/apply-week', authenticate, dietController.applyCalendarWeek);
+router.post('/calendar/remove-week', authenticate, dietController.removeCalendarWeek);
 router.get('/calendar/:date', authenticate, dietController.getCalendarEntry);
 router.post('/calendar', authenticate, dietController.createCalendarEntry);
 

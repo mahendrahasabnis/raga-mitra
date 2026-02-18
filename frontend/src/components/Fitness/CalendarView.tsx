@@ -165,7 +165,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
   };
 
   const formatVitalLabel = (label: string) => {
-    const normalized = label.toLowerCase();
+    const normalized = (label || "").toLowerCase();
     if (normalized.includes("weight")) return "Weight";
     if (normalized.includes("bmi")) return "BMI";
     if (normalized.includes("hba1c")) return "HbA1c";

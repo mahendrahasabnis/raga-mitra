@@ -138,9 +138,10 @@ const ReceiptScanSection: React.FC<ReceiptScanSectionProps> = ({ onDataExtracted
       console.log('✅ Extraction response:', response);
 
       if (response.extracted_data) {
+        const label = response.document_type_label || response.detection?.document_type_label;
         const docType = response.document_type || response.detection?.document_type || '';
         const receiptType = response.receipt_type || response.detection?.receipt_type || '';
-        setDetectedType([docType, receiptType].filter(Boolean).join(" / "));
+        setDetectedType(label || [docType, receiptType].filter(Boolean).join(" / "));
         setExtractedData(response.extracted_data);
         onDataExtracted(response.extracted_data);
       } else {

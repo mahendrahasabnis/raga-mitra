@@ -204,7 +204,7 @@ const AddPastVisitModal: React.FC<AddPastVisitModalProps> = ({
       // Extract unique clinic names
       const clinics = Array.from(new Set(
         results.doctors
-          ?.filter((d: any) => d.clinic_name?.toLowerCase().includes(clinicSearch.toLowerCase()))
+          ?.filter((d: any) => (d.clinic_name || "").toLowerCase().includes((clinicSearch || "").toLowerCase()))
           .map((d: any) => ({
             clinic_name: d.clinic_name,
             city: d.city,
@@ -458,7 +458,7 @@ const AddPastVisitModal: React.FC<AddPastVisitModalProps> = ({
                     {showSpecialtySearch && specialtySearch && (
                       <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                         {COMMON_SPECIALTIES.filter(spec => 
-                          spec.toLowerCase().includes(specialtySearch.toLowerCase())
+                          (spec || "").toLowerCase().includes((specialtySearch || "").toLowerCase())
                         ).map((specialty) => (
                           <button
                             key={specialty}
@@ -474,7 +474,7 @@ const AddPastVisitModal: React.FC<AddPastVisitModalProps> = ({
                           </button>
                         ))}
                         {COMMON_SPECIALTIES.filter(spec => 
-                          spec.toLowerCase().includes(specialtySearch.toLowerCase())
+                          (spec || "").toLowerCase().includes((specialtySearch || "").toLowerCase())
                         ).length === 0 && (
                           <div className="px-4 py-2 text-sm text-gray-500">
                             No matches. You can type your own specialty.

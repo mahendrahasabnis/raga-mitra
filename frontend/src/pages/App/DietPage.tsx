@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSelectedClient } from "../../contexts/ClientContext";
 import { dietApi } from "../../services/api";
 import { Salad, Calendar, Target, BookOpen, Layout } from "lucide-react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
@@ -21,14 +22,17 @@ const DietPage: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [nextSession, setNextSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedClient, setSelectedClient] = useState<string | null>(
-    () => localStorage.getItem("client-context-id")
-  );
+  const selectedClient = useSelectedClient();
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [weekTemplates, setWeekTemplates] = useState<any[]>([]);
   const [calendarTemplateId, setCalendarTemplateId] = useState<string>(
     () => localStorage.getItem("diet-calendar-template-id") || ""
   );
+  const [calendarWeekStart, setCalendarWeekStart] = useState<string>("");
+  const [calendarWeekEnd, setCalendarWeekEnd] = useState<string>("");
+  const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const [removingTemplate, setRemovingTemplate] = useState(false);
   const [needsSessionSetup, setNeedsSessionSetup] = useState(false);
 
   const templateOptions = [
@@ -40,16 +44,6 @@ const DietPage: React.FC = () => {
   ];
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "client-context-id") {
-        setSelectedClient(e.newValue);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
     fetchOverviewData();
   }, [selectedClient]);
 
@@ -58,7 +52,7 @@ const DietPage: React.FC = () => {
       setActiveTab("calendar");
       fetchSessionForDate(date, sessionId || undefined);
     }
-  }, [date, sessionId]);
+  }, [date, sessionId, selectedClient]);
 
   useEffect(() => {
     if (activeTab === "calendar" || date) {
@@ -288,15 +282,15 @@ const DietPage: React.FC = () => {
 
   return (
     <div className="space-y-4 overflow-x-hidden">
-      <div className="card p-2">
+      <div className="card p-2 diet-page-tabs-card">
         <div className="grid grid-cols-4 gap-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition ${
+              className={`diet-page-tab flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition ${
                 activeTab === tab.id
-                  ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                  ? "diet-page-tab--active bg-blue-500/20 text-blue-200 border border-blue-400/30"
                   : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
               }`}
             >
@@ -324,7 +318,90 @@ const DietPage: React.FC = () => {
       )}
 
       {activeTab === "calendar" && (
-        <>
+        <div className="space-y-3">
+          <div className="card p-3 flex flex-col md:flex-row gap-3 md:items-center flex-wrap">
+            <div className="text-sm text-gray-400 shrink-0">Weekly Template</div>
+            <div className="md:w-80 w-full">
+              <SelectDropdown
+                value={calendarTemplateId}
+                options={templateOptions}
+                onChange={(value) => {
+                  setCalendarTemplateId(value);
+                  if (value) {
+                    localStorage.setItem("diet-calendar-template-id", value);
+                  } else {
+                    localStorage.removeItem("diet-calendar-template-id");
+                  }
+                }}
+              />
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                type="button"
+                className="btn-primary text-sm"
+                disabled={!calendarTemplateId || applyingTemplate || !!selectedClient}
+                onClick={async () => {
+                  if (!calendarTemplateId || !calendarWeekStart || !calendarWeekEnd) return;
+                  try {
+                    const { entries } = await dietApi.getCalendarEntries(
+                      selectedClient || undefined,
+                      calendarWeekStart,
+                      calendarWeekEnd
+                    );
+                    const alreadyAdded = (entries || []).some(
+                      (e: any) => e.week_template_id === calendarTemplateId
+                    );
+                    if (alreadyAdded) {
+                      alert("This template is already applied to the visible week.");
+                      return;
+                    }
+                  } catch (e) {
+                    console.error("Check existing entries failed:", e);
+                  }
+                  setApplyingTemplate(true);
+                  try {
+                    await dietApi.applyWeekTemplate(
+                      calendarWeekStart,
+                      calendarWeekEnd,
+                      calendarTemplateId,
+                      selectedClient || undefined
+                    );
+                    setCalendarRefreshKey((k) => k + 1);
+                  } catch (e) {
+                    console.error("Apply template to week failed:", e);
+                  } finally {
+                    setApplyingTemplate(false);
+                  }
+                }}
+              >
+                {applyingTemplate ? "Adding…" : "Add Template to the Week"}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary text-sm"
+                disabled={!calendarTemplateId || removingTemplate || !!selectedClient}
+                onClick={async () => {
+                  if (!calendarTemplateId || !calendarWeekStart || !calendarWeekEnd) return;
+                  setRemovingTemplate(true);
+                  try {
+                    await dietApi.removeWeekTemplate(
+                      calendarWeekStart,
+                      calendarWeekEnd,
+                      calendarTemplateId,
+                      selectedClient || undefined
+                    );
+                    setCalendarRefreshKey((k) => k + 1);
+                  } catch (e) {
+                    console.error("Remove template from week failed:", e);
+                  } finally {
+                    setRemovingTemplate(false);
+                  }
+                }}
+              >
+                {removingTemplate ? "Removing…" : "Remove Template from Week"}
+              </button>
+            </div>
+          </div>
           {needsSessionSetup && date && (
             <div className="card p-4 space-y-3">
               <h3 className="font-semibold">No sessions for this day yet.</h3>
@@ -355,8 +432,18 @@ const DietPage: React.FC = () => {
               </div>
             </div>
           )}
-          <CalendarView selectedClient={selectedClient} />
-        </>
+          <CalendarView
+            selectedClient={selectedClient}
+            viewMode="week"
+            initialDate={date}
+            readOnly={!!selectedClient}
+            onWeekChange={(start, end) => {
+              setCalendarWeekStart(start);
+              setCalendarWeekEnd(end);
+            }}
+            refreshKey={calendarRefreshKey}
+          />
+        </div>
       )}
 
       {activeTab === "library" && (

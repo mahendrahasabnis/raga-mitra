@@ -42,18 +42,23 @@ const VitalsForm: React.FC<VitalsFormProps> = ({
     e.preventDefault();
     setLoading(true);
 
-    try {
-      const payload = {
-        ...formData,
-        value: parseFloat(formData.value),
-        client_id: clientId,
-      };
+    const payload = {
+      ...formData,
+      value: parseFloat(formData.value),
+      client_id: clientId,
+    };
+    console.log("[VitalsForm] Submitting vital", payload);
 
-      await healthApi.addVital(payload);
+    try {
+      const data = await healthApi.addVital(payload);
+      console.log("[VitalsForm] addVital full response", JSON.stringify(data, null, 2));
+      if (data?.warning) {
+        console.warn("[VitalsForm] Backend warning:", data.warning, "| error_detail:", data.error_detail, "| error_code:", data.error_code);
+      }
       onSuccess();
     } catch (error: any) {
-      console.error("Failed to save vital:", error);
-      alert(error.response?.data?.message || "Failed to save vital");
+      console.error("[VitalsForm] addVital failed", error?.response?.status, error?.response?.data, error);
+      alert(error.response?.data?.message || error?.message || "Failed to save vital");
     } finally {
       setLoading(false);
     }

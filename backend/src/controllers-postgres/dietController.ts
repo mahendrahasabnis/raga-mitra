@@ -235,6 +235,12 @@ export const createMealTemplate = async (req: any, res: Response) => {
   }
 };
 
+const MEAL_TEMPLATE_UPDATE_COLUMNS = [
+  'name', 'description', 'category', 'meal_type', 'cuisine', 'diet_type', 'serving_size',
+  'calories', 'protein', 'carbs', 'fats', 'fiber', 'sugar', 'sodium',
+  'ingredients', 'instructions', 'image_url', 'document_url', 'is_active',
+];
+
 export const updateMealTemplate = async (req: any, res: Response) => {
   try {
     const sequelize = await getAppSequelize();
@@ -245,9 +251,8 @@ export const updateMealTemplate = async (req: any, res: Response) => {
     const params: any = { id };
 
     Object.keys(updates).forEach((key) => {
-      if (key !== 'id' && updates[key] !== undefined) {
-        const dbKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-        updateFields.push(`${dbKey} = :${key}`);
+      if (key !== 'id' && updates[key] !== undefined && MEAL_TEMPLATE_UPDATE_COLUMNS.includes(key)) {
+        updateFields.push(`${key} = :${key}`);
         params[key] = updates[key];
       }
     });
@@ -913,6 +918,188 @@ export const createCalendarEntry = async (req: any, res: Response) => {
   }
 };
 
+/** Apply a diet weekly template to a date range (creates/updates calendar entries and meals per day). */
+export const applyCalendarWeek = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body.client_id;
+  const targetUserId = clientId || userId;
+  const { start_date, end_date, week_template_id } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!start_date || !end_date || !week_template_id) {
+    return res.status(400).json({ message: 'start_date, end_date, and week_template_id are required' });
+  }
+
+  try {
+    const sequelize = await getAppSequelize();
+    await ensureDietTablesReady();
+
+    const templateRows: any = await sequelize.query(
+      `SELECT * FROM diet_week_templates WHERE id = :id`,
+      { replacements: { id: week_template_id }, type: QueryTypes.SELECT }
+    );
+    if (!Array.isArray(templateRows) || templateRows.length === 0) {
+      return res.status(404).json({ message: 'Week template not found' });
+    }
+
+    const daysRaw: any = await sequelize.query(
+      `SELECT * FROM diet_template_days WHERE week_template_id = :id ORDER BY day_of_week ASC`,
+      { replacements: { id: week_template_id }, type: QueryTypes.SELECT }
+    );
+    const dayList = Array.isArray(daysRaw) ? daysRaw : [];
+    const templateDaysByDow: Record<number, any> = {};
+    for (const d of dayList) {
+      templateDaysByDow[d.day_of_week] = d;
+    }
+    for (const day of dayList) {
+      const sessionsRaw: any = await sequelize.query(
+        `SELECT * FROM diet_meal_sessions WHERE template_day_id = :dayId ORDER BY meal_order ASC`,
+        { replacements: { dayId: day.id }, type: QueryTypes.SELECT }
+      );
+      const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+      for (const session of sessions) {
+        const itemsRaw: any = await sequelize.query(
+          `SELECT * FROM diet_meal_items WHERE meal_session_id = :sessionId ORDER BY item_order ASC`,
+          { replacements: { sessionId: session.id }, type: QueryTypes.SELECT }
+        );
+        session.items = Array.isArray(itemsRaw) ? itemsRaw : [];
+      }
+      day.sessions = sessions;
+    }
+
+    const start = new Date(start_date + 'T00:00:00.000Z');
+    const end = new Date(end_date + 'T00:00:00.000Z');
+    const applied: string[] = [];
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      const dayOfWeek = (d.getUTCDay() + 6) % 7;
+      const templateDay = templateDaysByDow[dayOfWeek];
+      if (!templateDay || !templateDay.sessions?.length) continue;
+
+      const entryRows: any = await sequelize.query(
+        `SELECT id FROM diet_calendar_entries WHERE patient_user_id = :userId AND date = :date`,
+        { replacements: { userId: targetUserId, date: dateKey }, type: QueryTypes.SELECT }
+      );
+      let entryId: string;
+      if (Array.isArray(entryRows) && entryRows.length > 0) {
+        entryId = entryRows[0].id;
+        await sequelize.query(
+          `UPDATE diet_calendar_entries SET week_template_id = :weekTemplateId, template_day_id = :templateDayId, updated_at = NOW()
+           WHERE id = :id`,
+          {
+            replacements: { id: entryId, weekTemplateId: week_template_id, templateDayId: templateDay.id },
+            type: QueryTypes.UPDATE,
+          }
+        );
+      } else {
+        entryId = uuidv4();
+        await sequelize.query(
+          `INSERT INTO diet_calendar_entries (id, patient_user_id, date, week_template_id, template_day_id, is_override, is_rest_day, notes)
+           VALUES (:id, :userId, :date, :weekTemplateId, :templateDayId, FALSE, FALSE, NULL)`,
+          {
+            replacements: {
+              id: entryId,
+              userId: targetUserId,
+              date: dateKey,
+              weekTemplateId: week_template_id,
+              templateDayId: templateDay.id,
+            },
+            type: QueryTypes.INSERT,
+          }
+        );
+      }
+
+      await sequelize.query(
+        `DELETE FROM diet_calendar_meals WHERE calendar_entry_id = :entryId`,
+        { replacements: { entryId }, type: QueryTypes.DELETE }
+      );
+
+      let mealOrder = 0;
+      for (const session of templateDay.sessions) {
+        const calMealId = uuidv4();
+        await sequelize.query(
+          `INSERT INTO diet_calendar_meals (id, calendar_entry_id, session_name, meal_order, notes)
+           VALUES (:id, :entryId, :sessionName, :mealOrder, :notes)`,
+          {
+            replacements: {
+              id: calMealId,
+              entryId,
+              sessionName: session.session_name,
+              mealOrder: mealOrder++,
+              notes: session.notes || null,
+            },
+            type: QueryTypes.INSERT,
+          }
+        );
+        for (const item of session.items || []) {
+          await sequelize.query(
+            `INSERT INTO diet_calendar_meal_items (id, calendar_meal_id, meal_template_id, food_name, quantity, calories, protein, carbs, fats, fiber, sugar, sodium, item_order, notes)
+             VALUES (:id, :mealId, :templateId, :foodName, :quantity, :calories, :protein, :carbs, :fats, :fiber, :sugar, :sodium, :itemOrder, :notes)`,
+            {
+              replacements: {
+                id: uuidv4(),
+                mealId: calMealId,
+                templateId: item.meal_template_id || null,
+                foodName: item.food_name,
+                quantity: item.quantity || null,
+                calories: item.calories ?? null,
+                protein: item.protein ?? null,
+                carbs: item.carbs ?? null,
+                fats: item.fats ?? null,
+                fiber: item.fiber ?? null,
+                sugar: item.sugar ?? null,
+                sodium: item.sodium ?? null,
+                itemOrder: item.item_order ?? 0,
+                notes: item.notes || null,
+              },
+              type: QueryTypes.INSERT,
+            }
+          );
+        }
+      }
+      applied.push(dateKey);
+    }
+    return res.json({ applied, message: `Template applied to ${applied.length} day(s)` });
+  } catch (err: any) {
+    console.error('❌ [DIET] applyCalendarWeek error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+/** Remove diet template allocation from a date range (deletes calendar entries that use this template). */
+export const removeCalendarWeek = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body.client_id;
+  const targetUserId = clientId || userId;
+  const { start_date, end_date, week_template_id } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!start_date || !end_date || !week_template_id) {
+    return res.status(400).json({ message: 'start_date, end_date, and week_template_id are required' });
+  }
+
+  try {
+    const sequelize = await getAppSequelize();
+    await ensureDietTablesReady();
+
+    await sequelize.query(
+      `DELETE FROM diet_calendar_entries
+       WHERE patient_user_id = :userId AND date >= :startDate AND date <= :endDate AND week_template_id = :weekTemplateId`,
+      {
+        replacements: {
+          userId: targetUserId,
+          startDate: start_date,
+          endDate: end_date,
+          weekTemplateId: week_template_id,
+        },
+        type: QueryTypes.DELETE,
+      }
+    );
+    return res.json({ message: 'Template removed from week' });
+  } catch (err: any) {
+    console.error('❌ [DIET] removeCalendarWeek error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
 // ========== TRACKING ==========
 
 export const getTracking = async (req: any, res: Response) => {
@@ -1003,6 +1190,12 @@ export const createTracking = async (req: any, res: Response) => {
   }
 };
 
+const DIET_TRACKING_UPDATE_COLUMNS = [
+  'calendar_entry_id', 'calendar_meal_id', 'calendar_meal_item_id', 'tracked_date',
+  'completion_status', 'completed_quantity', 'completed_calories', 'completed_protein',
+  'completed_carbs', 'completed_fats', 'completed_items_detail', 'notes', 'pictures', 'rating',
+];
+
 export const updateTracking = async (req: any, res: Response) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
@@ -1017,16 +1210,15 @@ export const updateTracking = async (req: any, res: Response) => {
     const params: any = { id, userId };
     
     Object.keys(updates).forEach((key) => {
-      if (key !== 'id' && updates[key] !== undefined) {
-        const dbKey = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      if (key !== 'id' && updates[key] !== undefined && DIET_TRACKING_UPDATE_COLUMNS.includes(key)) {
         if (key === 'pictures') {
-          updateFields.push(`${dbKey} = :${key}::text[]`);
-          params[key] = JSON.stringify(updates[key]);
+          updateFields.push(`${key} = :${key}`);
+          params[key] = Array.isArray(updates[key]) ? updates[key] : (updates[key] ? JSON.stringify(updates[key]) : null);
         } else if (key === 'completed_items_detail') {
-          updateFields.push(`${dbKey} = :${key}::jsonb`);
-          params[key] = JSON.stringify(updates[key]);
+          updateFields.push(`${key} = :${key}::jsonb`);
+          params[key] = updates[key] ? JSON.stringify(updates[key]) : null;
         } else {
-          updateFields.push(`${dbKey} = :${key}`);
+          updateFields.push(`${key} = :${key}`);
           params[key] = updates[key];
         }
       }
@@ -1039,13 +1231,15 @@ export const updateTracking = async (req: any, res: Response) => {
     updateFields.push('updated_at = NOW()');
     
     const sql = `UPDATE diet_tracking SET ${updateFields.join(', ')} WHERE id = :id AND patient_user_id = :userId RETURNING *`;
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.UPDATE });
+    const raw: any = await sequelize.query(sql, { replacements: params });
+    const rows = Array.isArray(raw) ? (Array.isArray(raw[0]) ? raw[0] : raw) : [];
+    const rowsArray = Array.isArray(rows) ? rows : [];
     
-    if (rows.length === 0) {
+    if (rowsArray.length === 0) {
       return res.status(404).json({ message: 'Not found' });
     }
     
-    return res.json({ tracking: rows[0] });
+    return res.json({ tracking: rowsArray[0] });
   } catch (err: any) {
     console.error('❌ [DIET] updateTracking error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });

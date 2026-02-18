@@ -25,8 +25,34 @@ let vitalParametersRoutes: any;
 let sequelize: any;
 let testConnection: any;
 
-// Load environment variables
-dotenv.config({ path: path.join(__dirname, '../../.env.integrated') });
+// Load environment variables: .env first, then .env.integrated with override (so PORT=5001 wins for dev:local)
+dotenv.config({ path: path.join(__dirname, '../../../.env') });
+dotenv.config({ path: path.join(__dirname, '../../.env') });
+dotenv.config({ path: path.join(__dirname, '../../../.env.integrated'), override: true });
+dotenv.config({ path: path.join(__dirname, '../../.env.integrated'), override: true });
+
+// Local dev with online DB only: disable in-memory fallbacks by default.
+if (process.env.STRICT_DB == null) {
+  process.env.STRICT_DB = 'true';
+}
+
+const placeholderHost = 'your-cloud-sql-host-or-ip';
+const dbHost = process.env.DB_HOST || process.env.SHARED_DB_HOST || '';
+if (dbHost.includes(placeholderHost) || process.env.SHARED_DB_HOST?.includes(placeholderHost)) {
+  console.error('');
+  console.error('❌ Database host is still the placeholder. Edit .env.integrated and set:');
+  console.error('   DB_HOST= and SHARED_DB_HOST= to your real DB host (e.g. Cloud SQL IP, or 127.0.0.1 if using Cloud SQL Proxy).');
+  console.error('   See env.integrated.local.example and LOCAL-DEV-WITH-ONLINE-DB.md.');
+  console.error('');
+  process.exit(1);
+}
+
+const geminiKey = process.env.GEMINI_API_KEY || '';
+if (!geminiKey || geminiKey === 'your-gemini-api-key') {
+  console.warn('⚠️  GEMINI_API_KEY is not set or is placeholder. Document scanning (Gemini) will fail. Add a valid key to .env or .env.integrated.');
+} else {
+  console.log('🔑 GEMINI_API_KEY is set (document scanning enabled).');
+}
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3002', 10);
@@ -269,18 +295,10 @@ app.get('/health', (req, res) => {
 // Routes will be registered after server starts (in initializeRoutesAndDatabase)
 // This prevents sequelize-typescript decorator errors during module import
 
-// Initialize routes and database connection asynchronously (non-blocking)
-const initializeRoutesAndDatabase = async () => {
-  const startTime = Date.now();
+// Load and register routes (must complete before server accepts requests)
+const loadAndRegisterRoutes = async () => {
   const routeImportStart = Date.now();
-  console.log(`🔍 [DEBUG] initializeRoutesAndDatabase STARTED at ${new Date().toISOString()}`);
-  try {
-    console.log('════════════════════════════════════════════════════════════════');
-    console.log('🚀 Aarogya Mitra Backend - Integrated with platforms_99');
-    console.log('════════════════════════════════════════════════════════════════\n');
-
-    // Import routes FIRST (before database config to avoid decorator issues)
-    console.log('📦 Loading routes...');
+  console.log('📦 Loading routes...');
     console.log(`🔍 [DEBUG] Starting route imports at ${new Date().toISOString()}`);
     const routes = await Promise.allSettled([
       import('./routes-postgres/auth'),
@@ -323,6 +341,7 @@ const initializeRoutesAndDatabase = async () => {
     console.log(`  - userRoutes: ${!!userRoutes} ⭐`);
     console.log(`  - patientRoutes: ${!!patientRoutes}`);
     console.log(`  - hcpRoutes: ${!!hcpRoutes}`);
+    console.log(`  - resourcesRoutes: ${!!resourcesRoutes}`);
 
     // Log any failed route imports
     const routeNames = ['auth', 'patients', 'users', 'hcp', 'appointments', 'repository', 'pastVisits', 'repositories', 'medicalHistory', 'vitalParameters', 'health', 'fitness', 'diet', 'resources'];
@@ -385,61 +404,49 @@ app.use('/api/users', userRoutes);
     if (healthRoutes) app.use('/api/health', healthRoutes);
     if (fitnessRoutes) app.use('/api/fitness', fitnessRoutes);
     if (dietRoutes) app.use('/api/diet', dietRoutes);
-    if (resourcesRoutes) app.use('/api/resources', resourcesRoutes);
-
-    // Now load database (may fail; routes stay registered)
-    console.log('📦 Loading database configuration...');
-    try {
-      const dbConfig = await import('./config/database-integrated');
-      sequelize = dbConfig.sequelize;
-      testConnection = dbConfig.testConnection;
-    } catch (dbError: any) {
-      console.error('⚠️ Database config import failed (decorator issues):', dbError.message);
-      console.error('⚠️ Routes will still work, but database operations may fail');
-      // Try to create minimal sequelize instance for routes that need it
-      try {
-        const { Sequelize } = await import('sequelize-typescript');
-        sequelize = new Sequelize({
-          database: process.env.DB_NAME || 'platforms_99',
-          username: process.env.DB_USER || 'app_user',
-          password: process.env.DB_PASSWORD || 'app_password_2024',
-          host: process.env.DB_HOST || 'localhost',
-          port: parseInt(process.env.DB_PORT || '5432'),
-          dialect: 'postgres',
-          logging: false
-        } as any);
-      } catch (seqError) {
-        console.error('⚠️ Could not create fallback sequelize instance');
-      }
+    if (resourcesRoutes) {
+      app.use('/api/resources', resourcesRoutes);
+      console.log('✅ [DEBUG] Registered /api/resources');
+    } else {
+      console.warn('⚠️ [DEBUG] resources route failed to load - /api/resources will 404');
     }
 
-    // 404 handler (register AFTER routes)
-app.use('*', (req, res) => {
-  console.log(`404 - Route not found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ message: 'Route not found' });
-});
-
-    // Error handling middleware (register AFTER routes/404)
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Error:', err.stack);
-  res.status(500).json({ 
-    message: 'Something went wrong!',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  // 404 handler (register AFTER routes)
+  app.use('*', (req, res) => {
+    console.log(`404 - Route not found: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ message: 'Route not found' });
   });
-});
 
-    const totalTime = Date.now() - startTime;
-    console.log(`🔍 [DEBUG] Route registration completed in ${totalTime}ms total`);
-    console.log('✅ Routes loaded and registered\n');
-    console.log(`✅ User routes available: ${!!userRoutes}`);
-    console.log(`✅ Auth routes available: ${!!authRoutes}\n`);
+  // Error handling middleware (register AFTER routes/404)
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('Error:', err.stack);
+    res.status(500).json({ 
+      message: 'Something went wrong!',
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  });
 
-    // Test database connection
+  const totalTime = Date.now() - routeImportStart;
+  console.log(`✅ Routes loaded and registered in ${totalTime}ms\n`);
+};
+
+// Initialize database connection and schema (runs after server starts)
+const initializeDatabase = async () => {
+  try {
+    console.log('📦 Loading database configuration...');
+    const dbConfig = await import('./config/database-integrated');
+    sequelize = dbConfig.sequelize;
+    testConnection = dbConfig.testConnection;
+
     const connected = await testConnection();
     if (!connected) {
-      console.error('⚠️ Failed to connect to database, but continuing...');
-      console.error('⚠️ Health check endpoint will be available, but API endpoints may fail');
-      return;
+      console.error('❌ Failed to connect to database.');
+      const dbHost = process.env.DB_HOST || process.env.SHARED_DB_HOST || '';
+      if (dbHost === '127.0.0.1' || dbHost === 'localhost') {
+        console.error('💡 Start Cloud SQL Proxy first in another terminal: ./start-cloud-sql-proxy.sh');
+      }
+      console.error('❌ STRICT_DB=true: refusing to start without online DB connection.');
+      process.exit(1);
     }
 
     // Ensure patient_resources table exists in aarogya_mitra
@@ -496,44 +503,42 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
       }
     }
   } catch (error: any) {
-    const totalTime = startTime ? Date.now() - startTime : 0;
-    console.error(`❌ [DEBUG] Initialization FAILED after ${totalTime}ms`);
-    console.error('❌ Initialization error:', error);
-    console.error('❌ Error name:', error?.name);
-    console.error('❌ Error message:', error?.message);
-    console.error('❌ Error stack:', error?.stack?.substring(0, 1000));
-    console.error(`❌ [DEBUG] userRoutes state: ${!!userRoutes}`);
-    // Don't exit - server should continue running
+    console.error('❌ Database initialization failed:', error?.message || error);
+    console.error('❌ Error stack:', error?.stack?.substring(0, 500));
+    // Don't exit - server should continue running, routes are already registered
   }
 };
 
-// Start Express server immediately (required for Cloud Run health checks)
+// Start server: load routes first (so /api/resources etc. work immediately), then listen
 console.log('════════════════════════════════════════════════════════════════');
-console.log('🚀 Starting Aarogya Mitra Backend Server...');
+console.log('🚀 Aarogya Mitra Backend - Integrated with platforms_99');
 console.log('════════════════════════════════════════════════════════════════\n');
 
-app.listen(PORT, '0.0.0.0', () => {
+loadAndRegisterRoutes()
+  .then(() => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log('════════════════════════════════════════════════════════════════');
-  console.log(`✅ Server running on port ${PORT} (0.0.0.0)`);
+      console.log(`✅ Server running on port ${PORT} (0.0.0.0)`);
       console.log(`📊 Database: platforms_99 (Integrated Mode)`);
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔐 Platform: ${process.env.PLATFORM_NAME || 'aarogya-mitra'}`);
       console.log('════════════════════════════════════════════════════════════════');
-      
       console.log('\n📋 Available endpoints:');
-      console.log('   POST /api/auth/register - User registration');
       console.log('   POST /api/auth/login - User login');
-      console.log('   POST /api/auth/verify - Verify JWT token');
-      console.log('   GET  /api/hcp - List healthcare providers');
-      console.log('   GET  /api/patients - List patients');
-      console.log('   GET  /api/appointments - List appointments');
+      console.log('   GET  /api/resources - Patient resources');
+      console.log('   GET  /api/health - Health module');
       console.log('   GET  /health - Health check\n');
-  
-  // Initialize routes and database asynchronously after server starts
-  initializeRoutesAndDatabase().catch((error) => {
-    console.error('❌ Routes and database initialization failed:', error);
+
+      // Initialize database in background (routes already work)
+      initializeDatabase().catch((err) => {
+        console.error('❌ Database initialization failed:', err?.message);
+      });
+    });
+  })
+  .catch((err) => {
+    console.error('❌ Failed to load routes:', err?.message || err);
+    process.exit(1);
   });
-});
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

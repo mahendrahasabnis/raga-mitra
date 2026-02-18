@@ -247,9 +247,10 @@ const ResourcesPage: React.FC = () => {
   };
 
   const filteredResources = resources.filter((r) => {
-    const matchesSearch = !searchTerm || 
-      r.resource_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      r.resource_phone?.includes(searchTerm);
+    const term = (searchTerm || "").toLowerCase();
+    const matchesSearch = !searchTerm ||
+      (r.resource_name || "").toLowerCase().includes(term) ||
+      (r.resource_phone || "").includes(searchTerm || "");
     return matchesSearch;
   });
 
@@ -277,15 +278,15 @@ const ResourcesPage: React.FC = () => {
       )}
 
       {resources.length > 0 && (
-        <div className="card p-4">
+        <div className="card p-4 resources-search-card">
           <div className="relative mb-4">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 resources-search-icon" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search resources..."
-              className="input-field w-full pl-10"
+              className="input-field w-full pl-10 resources-search-input"
             />
           </div>
         </div>
@@ -300,7 +301,7 @@ const ResourcesPage: React.FC = () => {
       )}
 
       {filteredResources.length === 0 ? (
-        <div className="card p-8 text-center">
+        <div className="card p-8 text-center resources-resource-card">
           <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-400">No resources found</p>
           {!selectedClient && (
@@ -317,13 +318,13 @@ const ResourcesPage: React.FC = () => {
           {filteredResources.map((resource) => {
             const roles = Array.isArray(resource.roles) ? resource.roles : (resource.role ? [resource.role] : []);
             return (
-              <div key={resource.id} className="card p-4">
+              <div key={resource.id} className="card p-4 resources-resource-card">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3 flex-1">
                     {getRoleIconsGrid(roles)}
                     <div>
                       <h3 className="font-semibold">{resource.resource_name || 'Unknown'}</h3>
-                      <p className="text-sm text-gray-400">{resource.resource_phone || 'Unknown'}</p>
+                      <p className="text-sm text-gray-400 resources-phone">{resource.resource_phone || 'Unknown'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -338,14 +339,14 @@ const ResourcesPage: React.FC = () => {
                     )}
                     <a
                       href={`tel:${resource.resource_phone}`}
-                      className="p-2 rounded-lg hover:bg-white/10 transition"
+                      className="p-2 rounded-lg hover:bg-white/10 transition resources-action-link"
                       title="Call"
                     >
                       <PhoneCall className="h-4 w-4" />
                     </a>
                     <a
                       href={`sms:${resource.resource_phone}`}
-                      className="p-2 rounded-lg hover:bg-white/10 transition"
+                      className="p-2 rounded-lg hover:bg-white/10 transition resources-action-link"
                       title="SMS"
                     >
                       <MessageCircle className="h-4 w-4" />
@@ -354,7 +355,7 @@ const ResourcesPage: React.FC = () => {
                       href={`https://wa.me/${resource.resource_phone?.replace(/\+/g, '')}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="p-2 rounded-lg hover:bg-white/10 transition"
+                      className="p-2 rounded-lg hover:bg-white/10 transition resources-action-link"
                       title="WhatsApp"
                     >
                       <MessageSquare className="h-4 w-4" />
@@ -364,7 +365,7 @@ const ResourcesPage: React.FC = () => {
 
                 {/* Roles Toggle */}
                 {!selectedClient && (
-                  <div className="mt-3 pt-3 border-t border-white/10">
+                  <div className="mt-3 pt-3 border-t border-white/10 resources-card-divider">
                     <p className="text-xs text-gray-400 mb-2">Roles:</p>
                     <div className="flex flex-wrap gap-2">
                       {['Doctor', 'FitnessTrainer', 'Dietitian'].map((role) => {
@@ -373,9 +374,9 @@ const ResourcesPage: React.FC = () => {
                           <button
                             key={role}
                             onClick={() => handleToggleRole(resource.id, role, roles)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            className={`resources-role-btn px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               isActive
-                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                ? 'resources-role-btn--active bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                                 : 'bg-gray-600/20 text-gray-400 border border-gray-600/30'
                             } hover:bg-opacity-30`}
                           >
@@ -390,7 +391,7 @@ const ResourcesPage: React.FC = () => {
 
                 {/* Access Controls */}
                 {!selectedClient && (
-                  <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
+                  <div className="mt-4 pt-4 border-t border-white/10 resources-card-divider space-y-2">
                     <p className="text-xs text-gray-400 mb-2">Access Permissions:</p>
                     <div className="flex flex-col gap-2">
                       <label className="flex items-center justify-between cursor-pointer">

@@ -5,6 +5,10 @@ import axios from 'axios';
 const getApiBaseUrl = () => {
   // Health/data backend (Aarogya Mitra)
   if (import.meta.env.VITE_API_BASE_URL) return import.meta.env.VITE_API_BASE_URL;
+  // In dev, use relative /api so Vite proxies to the backend (avoids ERR_CONNECTION_REFUSED when browser can't reach localhost:5001)
+  if (import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '192.168.1.14')) {
+    return '/api';
+  }
   if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' || window.location.hostname === '192.168.1.14') {
     return 'http://localhost:5001/api';
   }
@@ -213,11 +217,29 @@ export const healthApi = {
     const response = await api.post('/health/reports/upload', payload);
     return response.data;
   },
+  listReports: async (clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get('/health/reports', { params });
+    return response.data;
+  },
   getReport: async (reportId: string, clientId?: string) => {
     const params: any = {};
     if (clientId) params.client_id = clientId;
     const response = await api.get(`/health/reports/${reportId}`, { params });
     return response.data;
+  },
+  getReportFileUrl: async (reportId: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.get(`/health/reports/${reportId}/file`, {
+      params,
+      responseType: 'blob',
+    });
+    const blob = response.data;
+    const contentType = blob.type || 'application/pdf';
+    const url = URL.createObjectURL(new Blob([blob], { type: contentType }));
+    return url;
   },
   extractReport: async (reportId: string) => {
     const response = await api.post(`/health/reports/${reportId}/extract`);
@@ -266,6 +288,82 @@ export const healthApi = {
   },
   addVital: async (payload: any) => {
     const response = await api.post('/health/vitals', payload);
+    return response.data;
+  },
+
+  // Live Monitoring (Institution Admissions)
+  getAdmissions: async (clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get('/health/admissions', { params });
+    return response.data;
+  },
+  getAdmission: async (id: string, clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get(`/health/admissions/${id}`, { params });
+    return response.data;
+  },
+  createAdmission: async (payload: any) => {
+    const response = await api.post('/health/admissions', payload);
+    return response.data;
+  },
+  updateAdmission: async (id: string, payload: any) => {
+    const response = await api.put(`/health/admissions/${id}`, payload);
+    return response.data;
+  },
+  deleteAdmission: async (id: string, clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.delete(`/health/admissions/${id}`, { params });
+    return response.data;
+  },
+  getMonitoringReadings: async (admissionId: string, clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get(`/health/admissions/${admissionId}/readings`, { params });
+    return response.data;
+  },
+  addMonitoringReadings: async (admissionId: string, readings: any[], clientId?: string) => {
+    const response = await api.post(`/health/admissions/${admissionId}/readings`, { readings, client_id: clientId });
+    return response.data;
+  },
+  getMonitoringTemplate: async (admissionId: string, clientId?: string) => {
+    const params = clientId ? { client_id: clientId } : {};
+    const response = await api.get(`/health/admissions/${admissionId}/readings/template`, {
+      params,
+      responseType: 'blob',
+    });
+    return response.data as Blob;
+  },
+  previewMonitoringImport: async (admissionId: string, file: File, signal?: AbortSignal) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post(`/health/admissions/${admissionId}/readings/preview`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal,
+    });
+    return response.data;
+  },
+  importMonitoringReadings: async (admissionId: string, file: File, clientId?: string, signal?: AbortSignal) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (clientId) formData.append('client_id', clientId);
+    const response = await api.post(`/health/admissions/${admissionId}/readings/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      signal,
+    });
+    return response.data;
+  },
+  getAdmissionTreatments: async (admissionId: string, clientId?: string, startDate?: string, endDate?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+    const response = await api.get(`/health/admissions/${admissionId}/treatments`, { params });
+    return response.data;
+  },
+  addAdmissionTreatment: async (admissionId: string, payload: { recorded_at: string; treatment_name: string; quantity?: string; notes?: string; doctor_name?: string }, clientId?: string) => {
+    const response = await api.post(`/health/admissions/${admissionId}/treatments`, { ...payload, client_id: clientId });
     return response.data;
   },
 };
@@ -481,6 +579,34 @@ export const dietApi = {
     const response = await api.post('/diet/calendar', payload);
     return response.data;
   },
+  applyWeekTemplate: async (
+    startDate: string,
+    endDate: string,
+    weekTemplateId: string,
+    clientId?: string
+  ) => {
+    const response = await api.post('/diet/calendar/apply-week', {
+      start_date: startDate,
+      end_date: endDate,
+      week_template_id: weekTemplateId,
+      client_id: clientId,
+    });
+    return response.data;
+  },
+  removeWeekTemplate: async (
+    startDate: string,
+    endDate: string,
+    weekTemplateId: string,
+    clientId?: string
+  ) => {
+    const response = await api.post('/diet/calendar/remove-week', {
+      start_date: startDate,
+      end_date: endDate,
+      week_template_id: weekTemplateId,
+      client_id: clientId,
+    });
+    return response.data;
+  },
 
   // Tracking
   getTracking: async (clientId?: string, startDate?: string, endDate?: string) => {
@@ -582,6 +708,14 @@ export const resourcesApi = {
       console.error('🟢 [API] Error response:', err.response?.data);
       throw err;
     }
+  },
+  addPatientByDoctor: async (payload: { phone: string; name?: string }) => {
+    const response = await api.post('/resources/patients', payload);
+    return response.data;
+  },
+  getDashPatients: async () => {
+    const response = await api.get('/resources/dash-patients');
+    return response.data;
   },
 };
 

@@ -402,6 +402,234 @@ export const listClients = async (req: any, res: Response) => {
   }
 };
 
+/** Doctor/Fitness Trainer/Dietitian adds a patient by phone. Creates patient_resources entry. Patient can disable access later. */
+export const addPatientByDoctor = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const { phone, name } = req.body || {};
+    if (!phone) {
+      return res.status(400).json({ message: 'phone is required' });
+    }
+
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+    const sharedSequelize = await getSharedSequelize();
+
+    const normalizedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+
+    // Look up or create patient user
+    const existingUsers: any = await sharedSequelize.query(
+      `SELECT id, name FROM users WHERE phone = :phone LIMIT 1`,
+      { replacements: { phone: normalizedPhone }, type: QueryTypes.SELECT }
+    );
+
+    let patientUserId: string;
+    const patientName = name || (existingUsers?.[0]?.name) || 'Patient';
+
+    if (existingUsers && Array.isArray(existingUsers) && existingUsers.length > 0) {
+      patientUserId = existingUsers[0].id;
+    } else {
+      const newUserId = uuidv4();
+      const pinHash = await bcrypt.hash('1234', 10);
+      await sharedSequelize.query(
+        `INSERT INTO users (id, phone, name, pin_hash, created_at, updated_at)
+         VALUES (:id, :phone, :name, :pinHash, NOW(), NOW())`,
+        {
+          replacements: { id: newUserId, phone: normalizedPhone, name: patientName, pinHash },
+          type: QueryTypes.INSERT,
+        }
+      );
+      patientUserId = newUserId;
+    }
+
+    // Determine role from current user's privileges
+    const plat = req.user?.privileges?.find((p: any) => p.platform === 'aarogya-mitra');
+    const roles = (plat?.roles || []).concat(req.user?.role ? [req.user.role] : []);
+    const role = roles.some((r: string) => r?.toLowerCase() === 'doctor') ? 'Doctor'
+      : roles.some((r: string) => /fitness|trainer/i.test(r || '')) ? 'FitnessTrainer'
+      : roles.some((r: string) => /dietitian|dietition|nutritionist/i.test(r || '')) ? 'Dietitian'
+      : 'Doctor';
+
+    // Get doctor's name/phone for resource_name, resource_phone
+    const docUsers: any = await sharedSequelize.query(
+      `SELECT name, phone FROM users WHERE id = :id LIMIT 1`,
+      { replacements: { id: userId }, type: QueryTypes.SELECT }
+    );
+    const doc = Array.isArray(docUsers) && docUsers.length > 0 ? docUsers[0] : null;
+    const resourceName = doc?.name || 'Doctor';
+    const resourcePhone = doc?.phone || '';
+
+    // Upsert patient_resources: resource=doctor, patient=patient
+    await sequelize.query(
+      `INSERT INTO patient_resources (id, patient_user_id, resource_user_id, role, roles, resource_name, resource_phone, patient_name, patient_phone, access_health, access_fitness, access_diet, created_at, updated_at)
+       VALUES (:id, :patientUserId, :resourceUserId, :role, :roles::jsonb, :resourceName, :resourcePhone, :patientName, :patientPhone, TRUE, TRUE, TRUE, NOW(), NOW())
+       ON CONFLICT (patient_user_id, resource_user_id) DO UPDATE SET
+         patient_name = EXCLUDED.patient_name,
+         patient_phone = EXCLUDED.patient_phone,
+         updated_at = NOW()`,
+      {
+        replacements: {
+          id: uuidv4(),
+          patientUserId,
+          resourceUserId: userId,
+          role,
+          roles: JSON.stringify([role]),
+          resourceName,
+          resourcePhone,
+          patientName,
+          patientPhone: normalizedPhone,
+        },
+        type: QueryTypes.INSERT,
+      }
+    );
+
+    return res.json({ success: true, patient_user_id: patientUserId });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] addPatientByDoctor error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+/** Dashboard patients list: patients with MRN, BEX, access flags, compliance, vital alerts. For doctors/trainers/dietitians. */
+export const listDashPatients = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+    const sharedSequelize = await getSharedSequelize();
+
+    const rows: any = await sequelize.query(
+      `SELECT pr.patient_user_id, pr.id as pr_id, pr.access_health, pr.access_fitness, pr.access_diet
+       FROM patient_resources pr
+       WHERE pr.resource_user_id = :userId`,
+      { replacements: { userId }, type: QueryTypes.SELECT }
+    );
+
+    const list: any[] = [];
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setDate(weekStart.getDate() - ((now.getDay() + 6) % 7));
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    const startDate = weekStart.toISOString().split('T')[0];
+    const endDate = weekEnd.toISOString().split('T')[0];
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (!row?.patient_user_id) continue;
+      const patientId = row.patient_user_id;
+      const hasAccess = row.access_health || row.access_fitness || row.access_diet;
+
+      const patientUsers: any = await sharedSequelize.query(
+        `SELECT id, name, phone FROM users WHERE id = :id LIMIT 1`,
+        { replacements: { id: patientId }, type: QueryTypes.SELECT }
+      );
+      const patient = Array.isArray(patientUsers) && patientUsers.length > 0 ? patientUsers[0] : null;
+      if (!patient) continue;
+
+      let mrn_number = '';
+      let bed_number = '';
+      try {
+        const adm: any = await sequelize.query(
+          `SELECT mrn_number, bed_number FROM institution_admissions WHERE patient_user_id = :pid ORDER BY admission_date DESC, created_at DESC LIMIT 1`,
+          { replacements: { pid: patientId }, type: QueryTypes.SELECT }
+        );
+        const a = Array.isArray(adm) && adm.length > 0 ? adm[0] : null;
+        if (a) {
+          mrn_number = a.mrn_number || '';
+          bed_number = a.bed_number || '';
+        }
+      } catch {
+        // ignore
+      }
+
+      let vital_alert = false;
+      let compliance_medicine: number | null = null;
+      let compliance_fitness: number | null = null;
+      let compliance_meals: number | null = null;
+
+      if (hasAccess) {
+        try {
+          const vitals: any = await sequelize.query(
+            `SELECT * FROM vital_parameters WHERE patient_user_id = :pid ORDER BY recorded_date DESC, measured_at DESC NULLS LAST LIMIT 50`,
+            { replacements: { pid: patientId }, type: QueryTypes.SELECT }
+          );
+          const vList = Array.isArray(vitals) ? vitals : [];
+          vital_alert = vList.some((v: any) => {
+            const p = (v.parameter_name || v.parameter || '').toLowerCase();
+            const val = Number(v.value);
+            if (p.includes('spo2') && val < 92) return true;
+            if (p.includes('heart') && (val < 50 || val > 120)) return true;
+            if (p.includes('systolic') && (val < 90 || val > 160)) return true;
+            if (p.includes('diastolic') && (val < 60 || val > 100)) return true;
+            return false;
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          const fitProg: any = await sequelize.query(
+            `SELECT COUNT(*) FILTER (WHERE completion_status = 'completed') as c, COUNT(*) as t FROM fitness_tracking WHERE patient_user_id = :pid AND tracked_date >= :start AND tracked_date <= :end`,
+            { replacements: { pid: patientId, start: startDate, end: endDate }, type: QueryTypes.SELECT }
+          );
+          const fp = Array.isArray(fitProg) && fitProg[0] ? fitProg[0] : { c: 0, t: 0 };
+          compliance_fitness = fp.t > 0 ? Math.round((Number(fp.c) / Number(fp.t)) * 100) : null;
+        } catch {
+          // ignore
+        }
+
+        try {
+          const dietProg: any = await sequelize.query(
+            `SELECT COUNT(*) FILTER (WHERE completion_status = 'completed') as c, COUNT(*) as t FROM diet_tracking WHERE patient_user_id = :pid AND tracked_date >= :start AND tracked_date <= :end`,
+            { replacements: { pid: patientId, start: startDate, end: endDate }, type: QueryTypes.SELECT }
+          );
+          const dp = Array.isArray(dietProg) && dietProg[0] ? dietProg[0] : { c: 0, t: 0 };
+          compliance_meals = dp.t > 0 ? Math.round((Number(dp.c) / Number(dp.t)) * 100) : null;
+        } catch {
+          // ignore
+        }
+
+        // Medicine compliance: no explicit tracking; show active medicines count as placeholder
+        try {
+          const meds: any = await sequelize.query(
+            `SELECT COUNT(*) as cnt FROM medicine_schedules WHERE patient_user_id = :pid AND is_active = TRUE`,
+            { replacements: { pid: patientId }, type: QueryTypes.SELECT }
+          );
+          const m = Array.isArray(meds) && meds[0] ? meds[0] : { cnt: 0 };
+          compliance_medicine = null; // No adherence tracking yet
+        } catch {
+          // ignore
+        }
+      }
+
+      list.push({
+        id: patient.id,
+        name: patient.name || 'Unknown',
+        phone: patient.phone || '',
+        mrn_number,
+        bed_number,
+        access_health: !!row.access_health,
+        access_fitness: !!row.access_fitness,
+        access_diet: !!row.access_diet,
+        has_access: hasAccess,
+        vital_alert: hasAccess ? vital_alert : null,
+        compliance_medicine: hasAccess ? compliance_medicine : null,
+        compliance_fitness: hasAccess ? compliance_fitness : null,
+        compliance_meals: hasAccess ? compliance_meals : null,
+      });
+    }
+
+    return res.json({ patients: list });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] listDashPatients error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
 async function ensurePatientResourcesTable() {
   try {
     const sequelize = await getAppSequelize();

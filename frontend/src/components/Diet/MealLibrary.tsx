@@ -140,9 +140,9 @@ const MealLibrary: React.FC<MealLibraryProps> = ({
   const filteredTemplates = templates.filter((t) => {
     const matchesSearch =
       !searchTerm ||
-      t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.description && t.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (t.dietitian_name && t.dietitian_name.toLowerCase().includes(searchTerm.toLowerCase()));
+      (t.name || "").toLowerCase().includes((searchTerm || "").toLowerCase()) ||
+      (t.description && (t.description || "").toLowerCase().includes((searchTerm || "").toLowerCase())) ||
+      (t.dietitian_name && (t.dietitian_name || "").toLowerCase().includes((searchTerm || "").toLowerCase()));
     return matchesSearch;
   });
 

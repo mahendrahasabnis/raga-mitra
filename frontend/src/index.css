@@ -36,29 +36,29 @@
   }
 
   [data-theme="light"] {
-    /* Light mode - soft pink/warm white */
-    --canvas: #fef7f5;
-    --canvas-gradient-start: #fef7f5;
-    --canvas-gradient-end: #fdf5f2;
-    --panel: rgba(255, 255, 255, 0.9);
-    --panel-strong: rgba(255, 255, 255, 0.95);
-    --foreground: #05070f;
-    --foreground-secondary: #0a0d15;
-    --muted: #1f2937;
-    --muted-light: #374151;
-    --border: rgba(10, 13, 21, 0.08);
-    --border-light: rgba(10, 13, 21, 0.12);
-    --primary: #e63b44;
-    --primary-hover: #d4333c;
-    --primary-light: #ff8c6f;
-    --accent: #ff5866;
-    --accent-coral: #ff8c6f;
-    --brand-red: #d82f39;
-    --brand-silver: #4a5568;
+    /* Light mode – clear hierarchy, visible cards */
+    --canvas: #ebe6e1;
+    --canvas-gradient-start: #ede8e3;
+    --canvas-gradient-end: #e6e0da;
+    --panel: #ffffff;
+    --panel-strong: #ffffff;
+    --foreground: #0f172a;
+    --foreground-secondary: #1e293b;
+    --muted: #64748b;
+    --muted-light: #94a3b8;
+    --border: #e2e8f0;
+    --border-light: #cbd5e1;
+    --primary: #c53030;
+    --primary-hover: #b91c1c;
+    --primary-light: #e63b44;
+    --accent: #dc2626;
+    --accent-coral: #ea580c;
+    --brand-red: #b91c1c;
+    --brand-silver: #475569;
     --primary-foreground: #ffffff;
-    --shadow-soft: 0 12px 40px rgba(10, 13, 21, 0.1);
-    --shadow-glow: 0 0 24px rgba(230, 59, 68, 0.15);
-    --shadow-card: 0 4px 16px rgba(10, 13, 21, 0.08);
+    --shadow-soft: 0 12px 40px rgba(15, 23, 42, 0.08);
+    --shadow-glow: 0 0 24px rgba(197, 48, 48, 0.2);
+    --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06), 0 4px 12px rgba(15, 23, 42, 0.06);
   }
 
   html {
@@ -132,7 +132,37 @@
   }
 
   [data-theme="light"] body::after {
-    opacity: 0.15;
+    opacity: 0.08;
+  }
+
+  [data-theme="light"] body::before {
+    opacity: 0.6;
+  }
+
+  /* Light mode: clear text hierarchy – primary (darkest) → secondary → muted (lightest) */
+  [data-theme="light"] .text-gray-200 { color: #1e293b; }
+  [data-theme="light"] .text-gray-300 { color: #334155; }
+  [data-theme="light"] .text-gray-400 { color: #64748b; }
+  [data-theme="light"] .text-gray-500 { color: #94a3b8; }
+  [data-theme="light"] .text-slate-400 { color: #64748b; }
+  [data-theme="light"] .text-slate-500 { color: #475569; }
+  [data-theme="light"] .text-slate-600 { color: #334155; }
+  [data-theme="light"] .text-slate-700 { color: #1e293b; }
+  [data-theme="light"] svg.text-gray-200 { color: #1e293b; }
+  [data-theme="light"] svg.text-gray-300 { color: #334155; }
+  [data-theme="light"] svg.text-gray-400 { color: #64748b; }
+  [data-theme="light"] svg.text-gray-500 { color: #94a3b8; }
+  [data-theme="light"] svg.text-slate-500 { color: #475569; }
+  [data-theme="light"] svg.text-slate-600 { color: #334155; }
+
+  /* Light theme: headings and body use clear foreground */
+  [data-theme="light"] body {
+    color: var(--foreground);
+  }
+
+  [data-theme="light"] h1, [data-theme="light"] h2, [data-theme="light"] h3,
+  [data-theme="light"] h4, [data-theme="light"] h5, [data-theme="light"] h6 {
+    color: var(--foreground);
   }
 
   /* Ensure content is above backgrounds */
@@ -257,15 +287,15 @@
 
   [data-theme="light"] .card {
     background: var(--panel);
-    border-color: var(--border-light);
+    border: 1px solid var(--border-light);
     box-shadow: var(--shadow-card);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   [data-theme="light"] .card:hover {
-    border-color: var(--border-light);
-    box-shadow: 0 8px 32px rgba(10, 13, 21, 0.12);
+    border-color: #94a3b8;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.1);
   }
 
   /* Card Contrast Variant */
@@ -277,6 +307,12 @@
     box-shadow: var(--shadow-card);
     backdrop-filter: var(--glass-blur);
     -webkit-backdrop-filter: var(--glass-blur);
+  }
+
+  [data-theme="light"] .card-contrast {
+    border: 1px solid var(--border-light);
+    background: #ffffff;
+    box-shadow: var(--shadow-card);
   }
 
   /* Input Field - Glass Style */
@@ -306,6 +342,21 @@
     box-shadow: 0 0 0 3px rgba(230, 59, 68, 0.1);
   }
 
+  [data-theme="light"] .input-field {
+    background-color: #ffffff;
+    border: 1px solid var(--border-light);
+    color: var(--foreground);
+  }
+
+  [data-theme="light"] .input-field::placeholder {
+    color: var(--muted);
+  }
+
+  [data-theme="light"] .input-field:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(197, 48, 48, 0.12);
+  }
+
   /* Glass Effect Utility */
   .glass-effect {
     background: var(--panel);
@@ -317,9 +368,19 @@
 
   [data-theme="light"] .glass-effect {
     background: var(--panel);
-    border-color: var(--border-light);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-light);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  }
+
+  /* iOS-style wheel picker */
+  .wheel-column {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .wheel-column::-webkit-scrollbar {
+    display: none;
   }
 
   /* Scroll Container */
@@ -429,6 +490,226 @@
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--border), transparent);
     border: none;
+  }
+
+  [data-theme="light"] .divider {
+    background: linear-gradient(90deg, transparent, var(--border-light), transparent);
+  }
+
+  /* Today page: make cards and inner blocks stand out in light theme */
+  [data-theme="light"] .today-page-card {
+    background: var(--panel);
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-card);
+  }
+
+  [data-theme="light"] .today-metric-box {
+    background: #f1f5f9;
+    border: 1px solid var(--border-light);
+  }
+
+  [data-theme="light"] .today-list-item {
+    background: #f8fafc;
+    border: 1px solid var(--border-light);
+  }
+
+  [data-theme="light"] .today-list-item:hover {
+    border-color: #94a3b8;
+    background: #f1f5f9;
+  }
+
+  /* Health page: active tab readable in light mode */
+  [data-theme="light"] .health-page-tab--active {
+    color: #9f1239 !important;
+    background: rgba(190, 18, 60, 0.12) !important;
+    border-color: #e11d48 !important;
+  }
+
+  [data-theme="light"] .health-page-tab--active svg {
+    color: inherit;
+  }
+
+  /* Health overview stat cards: dark text in light mode */
+  [data-theme="light"] .health-stat-card--rose {
+    color: #9f1239;
+    border-color: #fda4af !important;
+  }
+
+  [data-theme="light"] .health-stat-card--rose svg,
+  [data-theme="light"] .health-stat-card--rose p {
+    color: inherit;
+  }
+
+  [data-theme="light"] .health-stat-card--blue {
+    color: #1e40af;
+    border-color: #93c5fd !important;
+  }
+
+  [data-theme="light"] .health-stat-card--blue svg,
+  [data-theme="light"] .health-stat-card--blue p {
+    color: inherit;
+  }
+
+  [data-theme="light"] .health-stat-card--purple {
+    color: #6b21a8;
+    border-color: #c4b5fd !important;
+  }
+
+  [data-theme="light"] .health-stat-card--purple svg,
+  [data-theme="light"] .health-stat-card--purple p {
+    color: inherit;
+  }
+
+  [data-theme="light"] .health-stat-card--emerald {
+    color: #065f46;
+    border-color: #6ee7b7 !important;
+  }
+
+  [data-theme="light"] .health-stat-card--emerald svg,
+  [data-theme="light"] .health-stat-card--emerald p {
+    color: inherit;
+  }
+
+  /* Health overview section headings and icons (Upcoming, Key Vitals, etc.) */
+  [data-theme="light"] .health-overview-section-icon {
+    color: var(--foreground) !important;
+  }
+
+  [data-theme="light"] .health-key-vital-item {
+    background: #f8fafc;
+    border: 1px solid var(--border-light) !important;
+  }
+
+  /* Fitness page: active tab readable in light mode */
+  [data-theme="light"] .fitness-page-tab--active {
+    color: #1e40af !important;
+    background: rgba(59, 130, 246, 0.14) !important;
+    border-color: #3b82f6 !important;
+  }
+
+  [data-theme="light"] .fitness-page-tab--active svg {
+    color: inherit;
+  }
+
+  /* Fitness overview stat cards: dark text in light mode */
+  [data-theme="light"] .fitness-stat-card--blue {
+    color: #1e40af;
+    border-color: #93c5fd !important;
+  }
+
+  [data-theme="light"] .fitness-stat-card--blue svg,
+  [data-theme="light"] .fitness-stat-card--blue p {
+    color: inherit;
+  }
+
+  [data-theme="light"] .fitness-stat-card--emerald {
+    color: #065f46;
+    border-color: #6ee7b7 !important;
+  }
+
+  [data-theme="light"] .fitness-stat-card--emerald svg,
+  [data-theme="light"] .fitness-stat-card--emerald p {
+    color: inherit;
+  }
+
+  /* Fitness overview section headings and icons */
+  [data-theme="light"] .fitness-overview-section-icon {
+    color: var(--foreground) !important;
+  }
+
+  /* Fitness/Diet tab cards: ensure they stand out in light mode */
+  [data-theme="light"] .fitness-page-tabs-card {
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Inactive tabs: readable text in light mode */
+  [data-theme="light"] .fitness-page-tab:not(.fitness-page-tab--active) {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .fitness-page-tab:not(.fitness-page-tab--active) svg {
+    color: inherit;
+  }
+
+  /* Diet page: same as Fitness */
+  [data-theme="light"] .diet-page-tab--active {
+    color: #1e40af !important;
+    background: rgba(59, 130, 246, 0.14) !important;
+    border-color: #3b82f6 !important;
+  }
+
+  [data-theme="light"] .diet-page-tab--active svg {
+    color: inherit;
+  }
+
+  [data-theme="light"] .diet-page-tab:not(.diet-page-tab--active) {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .diet-page-tab:not(.diet-page-tab--active) svg {
+    color: inherit;
+  }
+
+  [data-theme="light"] .diet-overview-section-icon {
+    color: var(--foreground) !important;
+  }
+
+  [data-theme="light"] .diet-page-tabs-card {
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Resources page: card depth and text contrast in light mode */
+  [data-theme="light"] .resources-search-card,
+  [data-theme="light"] .resources-resource-card {
+    border: 1px solid var(--border-light);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06);
+  }
+
+  [data-theme="light"] .resources-search-input::placeholder {
+    color: #64748b;
+  }
+
+  [data-theme="light"] .resources-search-icon {
+    color: #64748b !important;
+  }
+
+  [data-theme="light"] .resources-phone {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .resources-action-link {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .resources-action-link:hover {
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+
+  [data-theme="light"] .resources-card-divider {
+    border-color: var(--border-light) !important;
+  }
+
+  [data-theme="light"] .resources-role-btn {
+    border-color: #cbd5e1 !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .resources-role-btn svg {
+    color: inherit;
+  }
+
+  [data-theme="light"] .resources-role-btn--active {
+    background: rgba(16, 185, 129, 0.18) !important;
+    border-color: #34d399 !important;
+    color: #047857 !important;
+  }
+
+  [data-theme="light"] .resources-role-btn--active svg {
+    color: inherit;
   }
 }
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Upload, Plus, Trash2, FileText } from "lucide-react";
+import { Mic, MicOff, Upload, Plus, Trash2, FileText, User, Phone, MessageCircle } from "lucide-react";
 import { healthApi } from "../../services/api";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min?url";
@@ -44,12 +44,15 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
   const [audioClips, setAudioClips] = useState<any[]>([]);
   const [summarizingAudio, setSummarizingAudio] = useState<string | null>(null);
 
+  const patientId = clientId || appointment.patient_user_id || appointment.patient_id;
+
   useEffect(() => {
     let active = true;
     const loadDetails = async () => {
+      if (!appointment?.id) return;
       setLoadingDetails(true);
       try {
-        const res = await healthApi.getAppointmentDetails(appointment.id, clientId || undefined);
+        const res = await healthApi.getAppointmentDetails(appointment.id, patientId || undefined);
         if (!active) return;
         const details = res.details || {};
         setHistory({
@@ -69,8 +72,10 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
         setPrescriptionItems(details.prescription?.items || []);
         setBills(details.bills?.items || []);
         setAudioClips(details.audio_clips || []);
-      } catch (error) {
-        console.error("Failed to load appointment details:", error);
+      } catch (error: any) {
+        if (error?.response?.status !== 404) {
+          console.error("Failed to load appointment details:", error);
+        }
       } finally {
         if (active) setLoadingDetails(false);
       }
@@ -79,13 +84,13 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
     return () => {
       active = false;
     };
-  }, [appointment.id, clientId]);
+  }, [appointment?.id, patientId]);
 
   const handleSaveDetails = async () => {
     setSaving(true);
     try {
       await healthApi.updateAppointmentDetails(appointment.id, {
-        client_id: clientId,
+        client_id: patientId || clientId,
         history,
         prescription: {
           ...prescription,
@@ -440,6 +445,35 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
 
   return (
     <div className="mt-4 border-t border-white/10 pt-4 space-y-4">
+      {(appointment.doctor_name || appointment.doctor_phone) && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-300 pb-2 border-b border-white/5">
+          <User className="h-4 w-4 shrink-0" />
+          <span>
+            {appointment.doctor_name ? `Dr. ${appointment.doctor_name}` : "Doctor"}
+            {appointment.doctor_phone && ` · ${appointment.doctor_phone}`}
+          </span>
+          {appointment.doctor_phone && (
+            <span className="flex items-center gap-1">
+              <a
+                href={`tel:${String(appointment.doctor_phone).replace(/\s/g, "")}`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-500/20 text-green-300 hover:bg-green-500/30 transition text-xs"
+                title="Call"
+              >
+                <Phone className="h-3.5 w-3.5" />
+                Call
+              </a>
+              <a
+                href={`sms:${String(appointment.doctor_phone).replace(/\s/g, "")}`}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition text-xs"
+                title="Message"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                Message
+              </a>
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap gap-2">
         {([
           { key: "history", label: "History" },

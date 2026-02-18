@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Circle, Camera, X, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Circle, Camera, X, Plus, Trash2, MinusCircle } from "lucide-react";
 import { dietApi } from "../../services/api";
 import MealLibrary from "./MealLibrary";
 
@@ -19,11 +19,24 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   const [sessionData, setSessionData] = useState<any>(session);
   const [sessionTracking, setSessionTracking] = useState<any>({});
   const [itemTracking, setItemTracking] = useState<Record<string, any>>({});
+  const [actualQuantityByItem, setActualQuantityByItem] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
   const [pictures, setPictures] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [showMealLibrary, setShowMealLibrary] = useState(false);
   const readOnly = !!selectedClient;
+
+  useEffect(() => {
+    const items = sessionData?.items || [];
+    setActualQuantityByItem((prev) => {
+      const next = { ...prev };
+      items.forEach((item: any) => {
+        const saved = itemTracking[item.id]?.completed_quantity;
+        if (saved != null && String(saved).trim() !== "") next[item.id] = String(saved);
+      });
+      return next;
+    });
+  }, [sessionData?.items, itemTracking]);
 
   useEffect(() => {
     fetchTracking();
@@ -196,17 +209,52 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     }
   };
 
-  const handleToggleItem = async (item: any, completed: boolean) => {
+  const upsertSessionCompletion = async (status: "completed" | "partial" | "skipped") => {
     if (!sessionData) return;
     setLoading(true);
     try {
       const trackingData = {
         calendar_entry_id: sessionData.calendar_entry_id,
         calendar_meal_id: sessionData.id,
+        tracked_date: date,
+        completion_status: status,
+        notes,
+        pictures: pictures.length > 0 ? pictures : null,
+        client_id: selectedClient || undefined,
+      };
+      if (sessionTracking?.id) {
+        await dietApi.updateTracking(sessionTracking.id, trackingData);
+      } else {
+        await dietApi.createTracking(trackingData);
+      }
+      await fetchTracking();
+      onComplete && onComplete();
+    } catch (error) {
+      console.error("Failed to save session status:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetItemStatus = async (
+    item: any,
+    status: "completed" | "skipped" | "pending",
+    completedQuantity?: string | null
+  ) => {
+    if (!sessionData) return;
+    setLoading(true);
+    try {
+      const qty =
+        completedQuantity !== undefined && completedQuantity !== null
+          ? (completedQuantity.trim() || null)
+          : (actualQuantityByItem[item.id]?.trim() || item.quantity || null);
+      const trackingData = {
+        calendar_entry_id: sessionData.calendar_entry_id,
+        calendar_meal_id: sessionData.id,
         calendar_meal_item_id: item.id,
         tracked_date: date,
-        completion_status: completed ? "completed" : "pending",
-        completed_quantity: item.quantity || null,
+        completion_status: status === "pending" ? "pending" : status,
+        completed_quantity: qty,
         completed_calories: item.calories || null,
         completed_protein: item.protein || null,
         completed_carbs: item.carbs || null,
@@ -230,6 +278,11 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
     } finally {
       setLoading(false);
     }
+  };
+
+  const saveActualQuantity = (item: any, value: string) => {
+    const status = (itemTracking[item.id]?.completion_status || "pending") as "completed" | "skipped" | "pending";
+    handleSetItemStatus(item, status, value);
   };
 
   const handleSaveNotes = async () => {
@@ -288,15 +341,79 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
   }
 
   const items = sessionData.items || [];
+  const sessionStatus = sessionTracking?.completion_status;
+  const completedItems = items.filter((i: any) => itemTracking[i.id]?.completion_status === "completed").length;
+  const skippedItems = items.filter((i: any) => itemTracking[i.id]?.completion_status === "skipped").length;
+  const isSessionCompleted =
+    sessionStatus === "completed" ||
+    (items.length > 0 && completedItems === items.length);
+  const isSessionPartial =
+    sessionStatus === "partial" ||
+    (items.length > 0 && completedItems > 0 && completedItems + skippedItems < items.length);
+  const isSessionSkipped = sessionStatus === "skipped";
+  const statusLabel = isSessionCompleted
+    ? "Completed"
+    : isSessionSkipped
+      ? "Skipped"
+      : isSessionPartial
+        ? "Partial"
+        : "Not started";
 
   return (
     <div className="space-y-4 overflow-x-hidden">
       <div className="card p-4">
-        <div className="flex flex-wrap gap-2 items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">{sessionData.session_name}</h2>
-            <p className="text-xs text-gray-400">{new Date(date).toLocaleDateString()}</p>
+        <div className="flex flex-col gap-3 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xl font-semibold">{sessionData.session_name}</h2>
+              <p className="text-sm text-gray-400">{new Date(date).toLocaleDateString()}</p>
+            </div>
+            <div
+              className={`flex items-center gap-2 ${
+                isSessionCompleted
+                  ? "text-emerald-300"
+                  : isSessionSkipped
+                    ? "text-amber-300"
+                    : isSessionPartial
+                      ? "text-blue-300"
+                      : "text-gray-400"
+              }`}
+            >
+              {isSessionCompleted ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : isSessionSkipped ? (
+                <MinusCircle className="h-4 w-4" />
+              ) : (
+                <Circle className="h-4 w-4" />
+              )}
+              <span className="text-sm font-medium">{statusLabel}</span>
+            </div>
           </div>
+          {!readOnly && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => upsertSessionCompletion("completed")}
+                className={`btn-secondary text-xs ${sessionStatus === "completed" ? "bg-emerald-500/20 text-emerald-200 border-emerald-400/40" : ""}`}
+                disabled={loading}
+              >
+                Mark Completed
+              </button>
+              <button
+                onClick={() => upsertSessionCompletion("partial")}
+                className={`btn-secondary text-xs ${sessionStatus === "partial" ? "bg-blue-500/20 text-blue-200 border-blue-400/40" : ""}`}
+                disabled={loading}
+              >
+                Partial
+              </button>
+              <button
+                onClick={() => upsertSessionCompletion("skipped")}
+                className={`btn-secondary text-xs ${sessionStatus === "skipped" ? "bg-amber-500/20 text-amber-200 border-amber-400/40" : ""}`}
+                disabled={loading}
+              >
+                Skipped
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {!readOnly && (
               <button onClick={() => setShowMealLibrary(true)} className="btn-primary flex items-center gap-2">
@@ -323,48 +440,96 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
           <p className="text-sm text-gray-400">No items added yet.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {items.map((item: any, idx: number) => {
-            const track = itemTracking[item.id];
-            const isCompleted = track?.completion_status === "completed";
-            return (
-              <div key={item.id || idx} className="card p-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    {!readOnly && (
-                      <button
-                        onClick={() => handleToggleItem(item, !isCompleted)}
-                        className="mt-1"
-                      >
-                        {isCompleted ? (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                        ) : (
-                          <Circle className="h-5 w-5 text-gray-400" />
-                        )}
-                      </button>
-                    )}
-                    <div>
-                      <h3 className="font-semibold">{item.food_name}</h3>
-                      {item.quantity && (
-                        <p className="text-xs text-gray-400">Quantity: {item.quantity}</p>
+        <div className="card p-4">
+          <h3 className="font-semibold mb-3">Planned vs Actual</h3>
+          <div className="space-y-3">
+            {items.map((item: any, idx: number) => {
+              const track = itemTracking[item.id];
+              const status = track?.completion_status || "pending";
+              const isCompleted = status === "completed";
+              const isSkipped = status === "skipped";
+              const actualQty = actualQuantityByItem[item.id] ?? track?.completed_quantity ?? "";
+              const cycleStatus = () => {
+                const nextStatus =
+                  status === "pending" ? "completed" : status === "completed" ? "skipped" : "pending";
+                handleSetItemStatus(item, nextStatus, actualQty.trim() || undefined);
+              };
+              return (
+                <div key={item.id || idx} className="p-3 bg-white/5 rounded-lg">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      {!readOnly && (
+                        <button
+                          type="button"
+                          onClick={cycleStatus}
+                          disabled={loading}
+                          className="mt-0.5 shrink-0"
+                          title="Tap: Done → Skip → Pending"
+                        >
+                          {isCompleted ? (
+                            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                          ) : isSkipped ? (
+                            <MinusCircle className="h-5 w-5 text-amber-400" />
+                          ) : (
+                            <Circle className="h-5 w-5 text-gray-400" />
+                          )}
+                        </button>
                       )}
-                      <div className="flex gap-3 text-xs text-gray-400 mt-1">
-                        {item.calories && <span>{item.calories} cal</span>}
-                        {item.protein && <span>{item.protein}g protein</span>}
-                        {item.carbs && <span>{item.carbs}g carbs</span>}
-                        {item.fats && <span>{item.fats}g fats</span>}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Planned</div>
+                        <h4 className="font-medium">{item.food_name}</h4>
+                        {item.quantity && (
+                          <p className="text-xs text-gray-400">Qty: {item.quantity}</p>
+                        )}
+                        <div className="flex flex-wrap gap-3 text-xs text-gray-400 mt-1">
+                          {item.calories != null && <span>{item.calories} cal</span>}
+                          {item.protein != null && <span>{item.protein}g P</span>}
+                          {item.carbs != null && <span>{item.carbs}g C</span>}
+                          {item.fats != null && <span>{item.fats}g F</span>}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">
+                          <span className="uppercase tracking-wide">Actual </span>
+                          <span className={isCompleted ? "text-emerald-400" : isSkipped ? "text-amber-400" : "text-gray-400"}>
+                            {isCompleted ? "Done" : isSkipped ? "Skipped" : "—"}
+                          </span>
+                        </div>
+                        <div className="mt-2 flex items-center gap-2">
+                          <label className="text-xs text-gray-500 whitespace-nowrap">Actual qty:</label>
+                          {readOnly ? (
+                            <span className="text-sm">{track?.completed_quantity || "—"}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={actualQty}
+                              onChange={(e) =>
+                                setActualQuantityByItem((prev) => ({ ...prev, [item.id]: e.target.value }))
+                              }
+                              onBlur={(e) => {
+                                const v = e.target.value.trim();
+                                if (v !== (track?.completed_quantity ?? "")) saveActualQuantity(item, v);
+                              }}
+                              placeholder={item.quantity || "e.g. 1 cup"}
+                              className="input-field text-sm py-1 px-2 flex-1 max-w-[140px]"
+                            />
+                          )}
+                        </div>
                       </div>
                     </div>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item)}
+                        className="btn-secondary p-2 shrink-0"
+                        disabled={loading}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                  {!readOnly && (
-                    <button onClick={() => handleDeleteItem(item)} className="btn-secondary p-2">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 

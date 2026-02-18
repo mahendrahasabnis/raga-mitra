@@ -132,11 +132,12 @@ const ExerciseLibrary: React.FC<ExerciseLibraryProps> = ({
   const categories = Array.from(new Set(templates.map((t) => t.category).filter(Boolean)));
 
   const filteredTemplates = templates.filter((t) => {
+    const term = (searchTerm || "").toLowerCase();
     const matchesSearch =
       !searchTerm ||
-      t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (t.description && t.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (t.trainer_name && t.trainer_name.toLowerCase().includes(searchTerm.toLowerCase()));
+      (t.name || "").toLowerCase().includes(term) ||
+      (t.description && (t.description || "").toLowerCase().includes(term)) ||
+      (t.trainer_name && (t.trainer_name || "").toLowerCase().includes(term));
     return matchesSearch;
   });
 

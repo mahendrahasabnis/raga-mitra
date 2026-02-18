@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSelectedClient } from "../../contexts/ClientContext";
 import { fitnessApi } from "../../services/api";
 import { Dumbbell, Calendar, Target, BookOpen, Layout } from "lucide-react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
@@ -21,9 +22,7 @@ const FitnessPage: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [nextSession, setNextSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedClient, setSelectedClient] = useState<string | null>(
-    () => localStorage.getItem("client-context-id")
-  );
+  const selectedClient = useSelectedClient();
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [weekTemplates, setWeekTemplates] = useState<any[]>([]);
   const [calendarTemplateId, setCalendarTemplateId] = useState<string>(
@@ -45,16 +44,6 @@ const FitnessPage: React.FC = () => {
   ];
 
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "client-context-id") {
-        setSelectedClient(e.newValue);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
     fetchOverviewData();
   }, [selectedClient]);
 
@@ -63,7 +52,7 @@ const FitnessPage: React.FC = () => {
       setActiveTab("calendar");
       fetchSessionForDate(date, sessionId || undefined);
     }
-  }, [date, sessionId]);
+  }, [date, sessionId, selectedClient]);
 
   useEffect(() => {
     if (activeTab === "calendar" || date) {
@@ -378,15 +367,15 @@ const FitnessPage: React.FC = () => {
   return (
     <div className="space-y-4 overflow-x-hidden">
       {/* Tabs */}
-      <div className="card p-2">
+      <div className="card p-2 fitness-page-tabs-card">
         <div className="grid grid-cols-4 gap-2">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-col items-center justify-center gap-1 px-2 sm:px-4 py-2 rounded-lg whitespace-nowrap transition ${
+              className={`fitness-page-tab flex flex-col items-center justify-center gap-1 px-2 sm:px-4 py-2 rounded-lg whitespace-nowrap transition ${
                 activeTab === tab.id
-                  ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                  ? "fitness-page-tab--active bg-blue-500/20 text-blue-200 border border-blue-400/30"
                   : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
               }`}
             >

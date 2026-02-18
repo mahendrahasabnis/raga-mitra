@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Calendar, MapPin, User, FileText, Plus, Edit, Trash2, List } from "lucide-react";
+import { Calendar, MapPin, User, FileText, Plus, Edit, Trash2, List, Phone, MessageCircle } from "lucide-react";
 import { healthApi } from "../../services/api";
 import AppointmentsForm from "./AppointmentsForm";
 import AppointmentsCalendarView from "./AppointmentsCalendarView";
@@ -152,10 +152,33 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
                       </div>
                     )}
 
-                    {apt.doctor_user_id && (
-                      <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                        <User className="h-4 w-4" />
-                        Doctor ID: {apt.doctor_user_id}
+                    {(apt.doctor_name || apt.doctor_phone || apt.doctor_user_id) && (
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-gray-400 mb-1">
+                        <User className="h-4 w-4 shrink-0" />
+                        <span>
+                          {apt.doctor_name ? `Dr. ${apt.doctor_name}` : "Doctor"}
+                          {apt.doctor_phone ? ` · ${apt.doctor_phone}` : apt.doctor_user_id ? " (linked)" : ""}
+                        </span>
+                        {apt.doctor_phone && (
+                          <span className="flex items-center gap-1">
+                            <a
+                              href={`tel:${String(apt.doctor_phone).replace(/\s/g, "")}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-green-500/20 text-green-300 hover:bg-green-500/30 transition text-xs"
+                              title="Call"
+                            >
+                              <Phone className="h-3.5 w-3.5" />
+                              Call
+                            </a>
+                            <a
+                              href={`sms:${String(apt.doctor_phone).replace(/\s/g, "")}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 transition text-xs"
+                              title="Message"
+                            >
+                              <MessageCircle className="h-3.5 w-3.5" />
+                              Message
+                            </a>
+                          </span>
+                        )}
                       </div>
                     )}
 

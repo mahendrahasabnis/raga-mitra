@@ -4,10 +4,12 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import LoadingSpinner from "./components/UI/LoadingSpinner";
 import TodayPage from "./pages/App/TodayPage";
+import DashPage from "./pages/App/DashPage";
 import HealthPage from "./pages/App/HealthPage";
 import FitnessPage from "./pages/App/FitnessPage";
 import DietPage from "./pages/App/DietPage";
 import ResourcesPage from "./pages/App/ResourcesPage";
+import DualAxisChartDemoPage from "./pages/Demo/DualAxisChartDemoPage";
 import AppShell from "./components/Layout/AppShell";
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -60,12 +62,14 @@ const App: React.FC = () => {
         >
           <Route path="today" element={<TodayPage />} />
           <Route path="calendar" element={<Navigate to="/app/today" replace />} />
+          <Route path="dash" element={<DashPage />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="fitness" element={<FitnessPage />} />
           <Route path="fitness/session/:date" element={<FitnessPage />} />
           <Route path="diet" element={<DietPage />} />
           <Route path="diet/session/:date" element={<DietPage />} />
           <Route path="resources" element={<ResourcesPage />} />
+          <Route path="demo/chart" element={<DualAxisChartDemoPage />} />
           <Route index element={<Navigate to="/app/today" replace />} />
         </Route>
         <Route path="*" element={<Navigate to="/app/today" replace />} />
