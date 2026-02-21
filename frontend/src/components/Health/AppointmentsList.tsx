@@ -4,6 +4,7 @@ import { healthApi } from "../../services/api";
 import AppointmentsForm from "./AppointmentsForm";
 import AppointmentsCalendarView from "./AppointmentsCalendarView";
 import AppointmentDetailsTabs from "./AppointmentDetailsTabs";
+import VitalsDashboard from "./VitalsDashboard";
 import { QRCodeCanvas } from "qrcode.react";
 
 interface AppointmentsListProps {
@@ -11,7 +12,9 @@ interface AppointmentsListProps {
   loading: boolean;
   selectedClient?: string | null;
   vitals?: any[];
+  reports?: any[];
   onRefresh: () => void;
+  initialExpandId?: string | null;
 }
 
 const AppointmentsList: React.FC<AppointmentsListProps> = ({
@@ -19,13 +22,15 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
   loading,
   selectedClient,
   vitals = [],
+  reports = [],
   onRefresh,
+  initialExpandId,
 }) => {
   const [showForm, setShowForm] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<any>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
-  const [expandedAppointment, setExpandedAppointment] = useState<string | null>(null);
+  const [expandedAppointment, setExpandedAppointment] = useState<string | null>(initialExpandId || null);
 
   const clinicOptions = useMemo(() => {
     return Array.from(new Set(appointments.map((apt) => apt.location).filter(Boolean)));
@@ -77,8 +82,10 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setViewMode("list")}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${
-                viewMode === "list" ? "bg-blue-500/20 text-blue-200" : "bg-white/10 text-gray-300"
+              className={`sub-tab px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 border transition ${
+                viewMode === "list"
+                  ? "sub-tab--active bg-rose-500/20 text-rose-200 border-rose-400/30"
+                  : "text-gray-300 border-transparent hover:bg-white/5"
               }`}
             >
               <List className="h-4 w-4" />
@@ -86,8 +93,10 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
             </button>
             <button
               onClick={() => setViewMode("calendar")}
-              className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 ${
-                viewMode === "calendar" ? "bg-blue-500/20 text-blue-200" : "bg-white/10 text-gray-300"
+              className={`sub-tab px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 border transition ${
+                viewMode === "calendar"
+                  ? "sub-tab--active bg-rose-500/20 text-rose-200 border-rose-400/30"
+                  : "text-gray-300 border-transparent hover:bg-white/5"
               }`}
             >
               <Calendar className="h-4 w-4" />
@@ -244,51 +253,13 @@ const AppointmentsList: React.FC<AppointmentsListProps> = ({
         )}
       </div>
 
-      <div className="card p-4">
-        <h3 className="font-semibold mb-3">Vitals History</h3>
-        {vitals.length === 0 ? (
-          <p className="text-sm text-gray-400">No vitals recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-white/10">
-                  <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Parameter</th>
-                  <th className="text-left p-2">Value</th>
-                  <th className="text-left p-2">Normal Range</th>
-                  <th className="text-left p-2">Unit</th>
-                  <th className="text-left p-2">Alert</th>
-                </tr>
-              </thead>
-              <tbody>
-                {vitals.map((vital: any) => (
-                  <tr key={vital.id} className="border-b border-white/5">
-                    <td className="p-2 text-gray-300">
-                      {new Date(vital.recorded_date || vital.measured_at || vital.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="p-2 text-gray-300">{vital.parameter_name || vital.parameter}</td>
-                    <td className="p-2 text-gray-300">{vital.value}</td>
-                    <td className="p-2 text-gray-300">
-                      {vital.normal_range_min !== undefined && vital.normal_range_max !== undefined
-                        ? `${vital.normal_range_min} - ${vital.normal_range_max}`
-                        : "-"}
-                    </td>
-                    <td className="p-2 text-gray-300">{vital.unit || "-"}</td>
-                    <td className="p-2">
-                      {vital.is_abnormal ? (
-                        <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-200">Alert</span>
-                      ) : (
-                        <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-200">Normal</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <VitalsDashboard
+        vitals={vitals}
+        reports={reports}
+        loading={loading}
+        selectedClient={selectedClient}
+        onRefresh={onRefresh}
+      />
 
       {showForm && (
         <AppointmentsForm

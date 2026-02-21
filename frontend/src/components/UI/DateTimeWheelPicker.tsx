@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Calendar } from "lucide-react";
 
 const MONTHS = [
@@ -200,17 +201,18 @@ export default function DateTimeWheelPicker({
         disabled={disabled}
         className={`input-field w-full flex items-center gap-2 text-left ${className}`}
       >
-        <Calendar className="h-4 w-4 shrink-0 text-[var(--muted)]" />
-        <span className={value ? "" : "text-[var(--muted)]"}>{displayText}</span>
+        <Calendar className="h-4 w-4 shrink-0 text-gray-400" />
+        <span className={value ? "text-[var(--foreground)]" : "text-gray-400"}>{displayText}</span>
       </button>
 
-      {open && (
-        <div
-          className="fixed inset-0 z-[60] flex flex-col justify-end"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Pick date and time"
-        >
+      {open &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[10000] flex flex-col justify-end"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pick date and time"
+          >
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setOpen(false)}
@@ -292,8 +294,9 @@ export default function DateTimeWheelPicker({
               Month · Day · Year · Hour · Min · AM/PM
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body
+        )}
     </>
   );
 }

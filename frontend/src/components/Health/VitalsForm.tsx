@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Activity } from "lucide-react";
 import { healthApi } from "../../services/api";
 
@@ -46,6 +47,7 @@ const VitalsForm: React.FC<VitalsFormProps> = ({
       ...formData,
       value: parseFloat(formData.value),
       client_id: clientId,
+      source: 'Manually entered',
     };
     console.log("[VitalsForm] Submitting vital", payload);
 
@@ -66,8 +68,8 @@ const VitalsForm: React.FC<VitalsFormProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
       <div className="card max-w-xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Add Vital Parameter</h2>
@@ -178,7 +180,8 @@ const VitalsForm: React.FC<VitalsFormProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

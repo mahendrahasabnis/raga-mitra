@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X, Upload, Camera, FileText } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, Upload, Camera, FileText, Loader2 } from "lucide-react";
 import { healthApi } from "../../services/api";
 import { jsPDF } from "jspdf";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
@@ -20,6 +21,24 @@ type DocumentType = "prescription" | "bill";
 /** Document types that support linking to an appointment (show "Add appointment and save ..."). */
 const APPOINTMENT_CAPABLE_DOC_TYPES = ["dr_fee_receipt", "dr_prescription", "dr_diagnostic_test_advice"];
 
+/** Generate an intuitive display name for a diagnostic report (e.g. "CBC Panel - 18 Feb 2025"). */
+function formatDiagnosticReportName(extracted: any, testDate?: string): string {
+  const date = testDate || extracted.test_date || new Date().toISOString().slice(0, 10);
+  const d = new Date(date);
+  const dateStr = Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" });
+  const parts: string[] = [];
+  const testName = (extracted.test_name || extracted.test_category || "").trim();
+  const labName = (extracted.diagnostics_center_name || "").trim();
+  if (testName) parts.push(testName);
+  else if (labName) parts.push(labName);
+  else if (Array.isArray(extracted.parameters) && extracted.parameters.length > 0) {
+    const paramNames = extracted.parameters.slice(0, 3).map((p: any) => p.parameter_name || p.name).filter(Boolean);
+    if (paramNames.length > 0) parts.push(paramNames.join(", "));
+  }
+  if (dateStr) parts.push(dateStr);
+  return parts.length > 0 ? parts.join(" — ") : `Diagnostic Report — ${dateStr || "Unknown date"}`;
+}
+
 const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
   isOpen,
   onClose,
@@ -37,10 +56,12 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
   const [appointmentCandidates, setAppointmentCandidates] = useState<any[]>([]);
   const [overrideDate, setOverrideDate] = useState<string>("");
   const [overrideTime, setOverrideTime] = useState<string>("");
-  const [showJson, setShowJson] = useState(false);
   const [detectedTypeLabel, setDetectedTypeLabel] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [previewBase64, setPreviewBase64] = useState<string>("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [patientSex, setPatientSex] = useState<string>("");
+  const [patientAge, setPatientAge] = useState<string>("");
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   const showAppointmentFlow =
@@ -58,10 +79,12 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
     setAppointmentCandidates([]);
     setOverrideDate("");
     setOverrideTime("");
-    setShowJson(false);
     setDetectedTypeLabel("");
     setPreviewUrl("");
     setPreviewBase64("");
+    setPreviewLoading(false);
+    setPatientSex("");
+    setPatientAge("");
   };
 
   const handleClose = () => {
@@ -139,9 +162,14 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
     if (files.length === 0) {
       setPreviewUrl("");
       setPreviewBase64("");
+      setPreviewLoading(false);
       return;
     }
+    setPreviewLoading(true);
+    setPreviewUrl("");
+    setPreviewBase64("");
     const first = files[0];
+    const done = () => setPreviewLoading(false);
     if (first.type === "application/pdf") {
       renderPdfFirstPage(first)
         .then((blob) => toBase64(blob))
@@ -152,7 +180,8 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
         .catch(() => {
           setPreviewUrl("");
           setPreviewBase64("");
-        });
+        })
+        .finally(done);
       return;
     }
     if (first.type.startsWith("image/")) {
@@ -165,7 +194,10 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
         .catch(() => {
           setPreviewUrl("");
           setPreviewBase64("");
-        });
+        })
+        .finally(done);
+    } else {
+      setPreviewLoading(false);
     }
   }, [files]);
 
@@ -210,10 +242,17 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
         extractionType = contentType;
       }
 
-      const res = await healthApi.extractDocumentData({
+      const payload: Record<string, unknown> = {
         file_base64: extractionBase64,
         file_type: extractionType,
-      });
+      };
+      const sexVal = (patientSex || "").trim().toUpperCase();
+      if (sexVal === "M" || sexVal === "F" || sexVal === "MALE" || sexVal === "FEMALE") {
+        payload.patient_sex = sexVal.startsWith("M") ? "M" : "F";
+      }
+      const ageNum = patientAge ? parseInt(String(patientAge).trim(), 10) : NaN;
+      if (!Number.isNaN(ageNum) && ageNum >= 0 && ageNum <= 150) payload.patient_age = ageNum;
+      const res = await healthApi.extractDocumentData(payload);
       // Prefer backend-identified document type label (e.g. "Dr. fee receipt", "Medicine bill")
       const documentTypeLabel = res.document_type_label || res.detection?.document_type_label;
       const docType = res.document_type || res.detection?.document_type || "receipt";
@@ -487,9 +526,11 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
           .map((p: any) => {
             const numVal = typeof p.value === "number" ? p.value : parseFloat(String(p.value));
             if (Number.isNaN(numVal)) return null;
+            const nrMin = p.normal_range_min != null ? parseFloat(String(p.normal_range_min)) : null;
+            const nrMax = p.normal_range_max != null ? parseFloat(String(p.normal_range_max)) : null;
             const refRange =
-              p.normal_range_min != null || p.normal_range_max != null
-                ? `${p.normal_range_min ?? ""}-${p.normal_range_max ?? ""}`.trim()
+              nrMin != null || nrMax != null
+                ? `${nrMin ?? ""}-${nrMax ?? ""}`.trim()
                 : undefined;
             return {
               parameter: p.parameter_name,
@@ -497,6 +538,8 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
               unit: p.unit || "",
               measured_at: testDate,
               reference_range: refRange,
+              normal_range_min: nrMin != null && !Number.isNaN(nrMin) ? nrMin : undefined,
+              normal_range_max: nrMax != null && !Number.isNaN(nrMax) ? nrMax : undefined,
               client_id: selectedClient,
             };
           })
@@ -506,15 +549,21 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
         if (extracted._file) {
           const { blob, contentType, fileName } = extracted._file;
           const fileBase64 = await toBase64(blob);
+          const displayName = formatDiagnosticReportName(extracted, testDate);
           await healthApi.uploadReport({
             file_base64: fileBase64,
             file_type: contentType,
-            file_name: fileName || (extracted.test_name ? `${extracted.test_name} report` : "Diagnostic report"),
+            file_name: displayName,
             client_id: selectedClient,
           });
         }
         // 2) Then process: save vitals.
-        if (vitals.length > 0) await healthApi.confirmVitals(vitals);
+        if (vitals.length > 0) {
+          const confirmRes = await healthApi.confirmVitals(vitals, selectedClient || undefined);
+          if (confirmRes?.duplicate || (confirmRes?.skipped ?? 0) > 0) {
+            alert("Duplicate found hence existing.");
+          }
+        }
 
         if (vitals.length > 0 || extracted._file) {
           onCreated();
@@ -658,9 +707,18 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
       if (fileUploadSkipped) {
         alert("Data saved. Document file could not be uploaded (storage not configured on server).");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to save document data:", error);
-      alert("Failed to save. Please try again.");
+      const msg = String(error?.response?.data?.message || error?.message || "");
+      const isDuplicate = /duplicate|already exists/i.test(msg);
+      const isNetworkError = error?.code === "ERR_NETWORK" || error?.message === "Network Error" || /connection refused|net::ERR_CONNECTION_REFUSED/i.test(msg);
+      if (isDuplicate) {
+        alert("Duplicate found hence existing.");
+      } else if (isNetworkError) {
+        alert("Connection refused. Ensure the backend is running (e.g. npm run dev:local).");
+      } else {
+        alert("Failed to save. Please try again.");
+      }
     } finally {
       setProcessing(false);
     }
@@ -668,8 +726,8 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
       <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Scan Document</h2>
@@ -731,40 +789,74 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
           </div>
 
           {files.length > 0 && (
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-300">
-                {files.length === 1 ? files[0].name : `${files.length} images selected`}
-              </p>
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setFiles([]);
-                  setExtracted(null);
-                  setAppointmentCandidates([]);
-                  setAppointmentChoice(null);
-                }}
-              >
-                Clear
-              </button>
-              <button
-                className="btn-primary"
-                onClick={async () => {
-                  await extractData();
-                  prepareCandidates();
-                }}
-                disabled={processing}
-              >
-                {processing ? "Processing..." : "Extract & Continue"}
-              </button>
-            </div>
-          )}
-
-          {previewUrl && (
-            <div className="border border-white/10 rounded-lg p-3">
-              <p className="text-xs text-gray-400 mb-2">Preview</p>
-              <img src={previewUrl} alt="Document preview" className="w-full rounded-lg" />
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-gray-400">Patient sex (for normal range)</span>
+                  <select
+                    className="input-field"
+                    value={patientSex}
+                    onChange={(e) => setPatientSex(e.target.value)}
+                  >
+                    <option value="">—</option>
+                    <option value="M">Male</option>
+                    <option value="F">Female</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs text-gray-400">Patient age (years, for normal range)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={150}
+                    className="input-field"
+                    placeholder="e.g. 45"
+                    value={patientAge}
+                    onChange={(e) => setPatientAge(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="border border-white/10 rounded-lg p-3">
+                <p className="text-xs text-gray-400 mb-2">
+                  Preview {files.length === 1 ? `— ${files[0].name}` : `— ${files.length} images`}
+                </p>
+                {previewLoading ? (
+                  <div className="flex items-center justify-center min-h-[200px] bg-black/20 rounded-lg">
+                    <Loader2 className="h-10 w-10 text-rose-400 animate-spin" aria-hidden="true" />
+                  </div>
+                ) : previewUrl ? (
+                  <img src={previewUrl} alt="Document preview" className="w-full rounded-lg max-h-[320px] object-contain" />
+                ) : (
+                  <div className="flex items-center justify-center min-h-[120px] text-gray-500 text-sm rounded-lg bg-black/20">
+                    Preview unavailable
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setFiles([]);
+                    setExtracted(null);
+                    setAppointmentCandidates([]);
+                    setAppointmentChoice(null);
+                  }}
+                >
+                  Clear
+                </button>
+                <button
+                  className="btn-primary"
+                  onClick={async () => {
+                    await extractData();
+                    prepareCandidates();
+                  }}
+                  disabled={processing || previewLoading}
+                >
+                  {processing ? "Extracting…" : "Extract Data"}
+                </button>
+              </div>
+            </>
           )}
 
           {extracted && (
@@ -859,16 +951,73 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
                 </div>
               )}
 
-              <button
-                className="btn-secondary"
-                onClick={() => setShowJson((prev) => !prev)}
-              >
-                {showJson ? "Hide JSON" : "Show JSON"}
-              </button>
-              {showJson && (
-                <pre className="text-xs text-gray-300 bg-black/30 rounded-lg p-3 max-h-48 overflow-auto">
-                  {JSON.stringify({ ...extracted, _file: undefined }, null, 2)}
-                </pre>
+              {Array.isArray(extracted.parameters) && extracted.parameters.length > 0 && (
+                <div className="overflow-auto max-h-[280px] border border-white/10 rounded-lg">
+                  <p className="text-xs text-gray-400 p-2 border-b border-white/10">Vital parameters — edit Normal Range before import</p>
+                  <table className="w-full">
+                    <thead className="sticky top-0 bg-[var(--panel)] z-10">
+                      <tr className="border-b border-white/10">
+                        <th className="text-left p-2 text-sm font-medium">Parameter</th>
+                        <th className="text-left p-2 text-sm font-medium">Value</th>
+                        <th className="text-left p-2 text-sm font-medium">Unit</th>
+                        <th className="text-left p-2 text-sm font-medium">Normal Low</th>
+                        <th className="text-left p-2 text-sm font-medium">Normal High</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {extracted.parameters.map((p: any, idx: number) => {
+                        if (!p.parameter_name || p.value === undefined || p.value === null) return null;
+                        return (
+                          <tr key={`${p.parameter_name}-${idx}`} className="border-b border-white/5 hover:bg-white/5">
+                            <td className="p-2 text-sm text-gray-300">{p.parameter_name ?? p.name ?? "—"}</td>
+                            <td className="p-2 text-sm text-gray-300">{p.value}</td>
+                            <td className="p-2 text-sm text-gray-400">{p.unit ?? "—"}</td>
+                            <td className="p-2">
+                              <input
+                                type="number"
+                                step="any"
+                                className="input-field w-20 text-sm py-1"
+                                value={p.normal_range_min ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setExtracted((prev: any) => {
+                                    const next = { ...prev, parameters: [...(prev.parameters || [])] };
+                                    const copy = { ...next.parameters[idx] };
+                                    copy.normal_range_min = v === "" ? undefined : parseFloat(v);
+                                    if (Number.isNaN(copy.normal_range_min)) copy.normal_range_min = undefined;
+                                    next.parameters[idx] = copy;
+                                    return next;
+                                  });
+                                }}
+                                placeholder="—"
+                              />
+                            </td>
+                            <td className="p-2">
+                              <input
+                                type="number"
+                                step="any"
+                                className="input-field w-20 text-sm py-1"
+                                value={p.normal_range_max ?? ""}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setExtracted((prev: any) => {
+                                    const next = { ...prev, parameters: [...(prev.parameters || [])] };
+                                    const copy = { ...next.parameters[idx] };
+                                    copy.normal_range_max = v === "" ? undefined : parseFloat(v);
+                                    if (Number.isNaN(copy.normal_range_max)) copy.normal_range_max = undefined;
+                                    next.parameters[idx] = copy;
+                                    return next;
+                                  });
+                                }}
+                                placeholder="—"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               {showAppointmentFlow && (
@@ -925,7 +1074,8 @@ const ScanDocumentModal: React.FC<ScanDocumentModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

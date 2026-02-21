@@ -753,7 +753,7 @@ const SessionDetail: React.FC<SessionDetailProps> = ({
       )}
 
       {showExerciseLibrary && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-0">
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-0">
           <div className="card w-full h-full md:h-auto md:max-w-5xl md:max-h-[90vh] p-4 overflow-hidden flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Add Exercise</h3>

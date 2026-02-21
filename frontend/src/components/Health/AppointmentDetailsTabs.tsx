@@ -484,8 +484,8 @@ const AppointmentDetailsTabs: React.FC<AppointmentDetailsTabsProps> = ({ appoint
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              activeTab === tab.key ? "bg-blue-500/20 text-blue-200" : "bg-white/5 text-gray-300 hover:bg-white/10"
+            className={`sub-tab px-4 py-2 rounded-lg text-sm font-medium border transition ${
+              activeTab === tab.key ? "sub-tab--active bg-rose-500/20 text-rose-200 border-rose-400/30" : "bg-white/5 text-gray-300 border-transparent hover:bg-white/10"
             }`}
           >
             {tab.label}

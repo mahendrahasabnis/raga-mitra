@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User, LayoutDashboard } from "lucide-react";
+import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User, LayoutDashboard, ScanLine } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { useAuth } from "../../contexts/AuthContext";
 import { ClientProvider } from "../../contexts/ClientContext";
 import { resourcesApi } from "../../services/api";
+import QrScannerModal from "../Shared/QrScannerModal";
 
-const tabs = [
+const baseTabs = [
   { to: "/app/today", label: "Today", icon: Home },
   { to: "/app/dash", label: "Dash", icon: LayoutDashboard },
-  { to: "/app/health", label: "Health", icon: HeartPulse },
-  { to: "/app/fitness", label: "Fitness", icon: Dumbbell },
-  { to: "/app/diet", label: "Diet", icon: Salad },
+  { to: "/app/health", label: "Health", myLabel: "My Health", icon: HeartPulse },
+  { to: "/app/fitness", label: "Fitness", myLabel: "My Fitness", icon: Dumbbell },
+  { to: "/app/diet", label: "Diet", myLabel: "My Diet", icon: Salad },
   { to: "/app/resources", label: "Resources", icon: Users },
 ];
 
@@ -32,6 +33,8 @@ const AppShell: React.FC<Props> = ({ children }) => {
   const [clientSearch, setClientSearch] = useState("");
   const [clientPickerOpen, setClientPickerOpen] = useState(false);
   const [patientFromDash, setPatientFromDash] = useState<{ id: string; name: string; phone: string } | null>(null);
+  const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showQrPopup, setShowQrPopup] = useState(false);
 
   // Read client from URL during render so it's available immediately when navigating from Dash
   const urlClient = useMemo(() => {
@@ -80,6 +83,12 @@ const AppShell: React.FC<Props> = ({ children }) => {
     const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
     const roles = (plat?.roles || []).concat(user?.role ? [user.role] : []);
     return roles.some((r) => r && ['doctor', 'fitnesstrainer', 'fitness trainer', 'dietitian', 'dietition', 'nutritionist'].includes(String(r).toLowerCase()));
+  }, [user]);
+
+  const hasCheckinRole = useMemo(() => {
+    const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
+    const roles = (plat?.roles || []).concat(user?.role ? [user.role] : []);
+    return roles.some((r) => r && ['doctor', 'receptionist', 'nurse'].includes(String(r).toLowerCase()));
   }, [user]);
 
   useEffect(() => {
@@ -178,14 +187,18 @@ const AppShell: React.FC<Props> = ({ children }) => {
   }, [clientSearch, filteredClients]);
 
   const navTabs = useMemo(() => {
-    if (hasResourceRole && effectiveSelectedClient) {
-      return tabs.filter((t) => t.to !== "/app/resources");
+    const viewingClient = !!effectiveSelectedClient;
+    const resolved = baseTabs.map(t => ({
+      ...t,
+      label: viewingClient ? t.label : (t.myLabel || t.label),
+    }));
+    if (hasResourceRole && viewingClient) {
+      return resolved.filter((t) => t.to !== "/app/resources" && t.to !== "/app/dash");
     }
-    // Dash tab only for doctor/fitness trainer/dietitian
     if (!hasResourceRole) {
-      return tabs.filter((t) => t.to !== "/app/dash");
+      return resolved.filter((t) => t.to !== "/app/dash");
     }
-    return tabs;
+    return resolved;
   }, [hasResourceRole, effectiveSelectedClient]);
 
   const rolesLabel = useMemo(() => {
@@ -200,7 +213,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
 
   return (
     <div className={`min-h-screen ${shellBg} flex flex-col`}>
-      <header className={`sticky top-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)' }}>
+      <header className={`sticky top-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="safe-area px-4 py-3 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex flex-col gap-0.5">
@@ -255,9 +268,13 @@ const AppShell: React.FC<Props> = ({ children }) => {
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="flex items-center gap-2 justify-end">
               {user?.id && (
-                <div className="flex flex-col items-center">
+                <button
+                  onClick={() => setShowQrPopup(true)}
+                  className="flex flex-col items-center cursor-pointer"
+                  title="Tap to enlarge QR"
+                >
                   <QRCodeCanvas
                     value={user.id}
                     size={56}
@@ -267,10 +284,23 @@ const AppShell: React.FC<Props> = ({ children }) => {
                   <span className={`text-[10px] ${theme === "light" ? "text-slate-600" : "text-gray-400"}`}>
                     User QR
                   </span>
-                </div>
+                </button>
               )}
-              {hasResourceRole && (
-                <>
+              <div className="grid grid-cols-2 gap-1.5">
+                {hasCheckinRole && (
+                  <button
+                    onClick={() => setShowQrScanner(true)}
+                    className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
+                      theme === "light"
+                        ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 shadow-sm"
+                        : "bg-rose-500/15 border-rose-400/30 text-rose-300 hover:bg-rose-500/25"
+                    }`}
+                    title="Scan patient QR"
+                  >
+                    <ScanLine className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                {hasResourceRole && (
                   <button
                     onClick={() => setClientPickerOpen(true)}
                     className={`h-8 w-8 rounded-2xl text-sm font-medium border transition flex items-center justify-center ${
@@ -282,28 +312,28 @@ const AppShell: React.FC<Props> = ({ children }) => {
                   >
                     <Users className="h-3.5 w-3.5" />
                   </button>
-                </>
-              )}
+                )}
                 <button
                   onClick={() => setTheme((t) => (t === "light" ? "dark" : "light"))}
-                className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
+                  className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
                     theme === "light"
                       ? "bg-white text-slate-900 border-black/10 shadow-sm"
                       : "bg-white/10 border-white/15 text-white"
                   }`}
                   title={theme === "light" ? "Switch to dark" : "Switch to light"}
                 >
-                {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
+                  {theme === "light" ? <Moon className="h-3.5 w-3.5" /> : <Sun className="h-3.5 w-3.5" />}
                 </button>
                 <button
                   onClick={() => { logout(); navigate("/login"); }}
-                className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
+                  className={`h-8 w-8 rounded-2xl border flex items-center justify-center transition ${
                     theme === "light" ? "bg-white text-slate-900 border-black/10 hover:bg-slate-100 shadow-sm" : "bg-white/10 border border-white/15 hover:bg-white/15 text-white"
                   }`}
                   title="Logout"
                 >
-                <LogOut className={`h-3.5 w-3.5 ${theme === "light" ? "text-rose-700" : "text-rose-200"}`} />
+                  <LogOut className={`h-3.5 w-3.5 ${theme === "light" ? "text-rose-700" : "text-rose-200"}`} />
                 </button>
+              </div>
             </div>
           </div>
           {effectiveSelectedClient && (
@@ -341,7 +371,7 @@ const AppShell: React.FC<Props> = ({ children }) => {
         </div>
       </header>
       {clientPickerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="card max-w-xl w-full p-4">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Select Client</h2>
@@ -408,14 +438,16 @@ const AppShell: React.FC<Props> = ({ children }) => {
         </div>
       )}
 
-      <main className="flex-1 overflow-y-auto pb-24 px-4 pt-4">
-        <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
+      <main className="flex-1 flex flex-col min-h-0 px-4 pt-4" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
+        </div>
       </main>
 
-      <nav className={`fixed bottom-0 left-0 right-0 z-30 backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)' }}>
+      <nav className={`fixed bottom-0 left-0 right-0 z-30 backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
         <div className="safe-area">
           <div className="flex justify-center">
-            <div className="grid grid-cols-6 md:grid-cols-6 lg:grid-cols-6 xl:grid-cols-6 gap-0 w-full">
+            <div className="flex justify-around w-full">
               {navTabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = location.pathname === tab.to;
@@ -447,6 +479,56 @@ const AppShell: React.FC<Props> = ({ children }) => {
           </div>
         </div>
       </nav>
+
+      {showQrScanner && (
+        <QrScannerModal
+          isOpen={showQrScanner}
+          onClose={() => setShowQrScanner(false)}
+        />
+      )}
+
+      {showQrPopup && user?.id && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowQrPopup(false)}
+        >
+          <motion.div
+            initial={{ scale: 0.7, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.7, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className={`flex flex-col items-center gap-3 p-6 rounded-3xl shadow-2xl ${
+              theme === "light" ? "bg-white" : "bg-gray-900 border border-white/10"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <QRCodeCanvas
+              value={user.id}
+              size={220}
+              bgColor={theme === "light" ? "#ffffff" : "#111827"}
+              fgColor={theme === "light" ? "#111827" : "#e5e7eb"}
+              level="H"
+              includeMargin
+            />
+            <p className={`text-sm font-medium ${theme === "light" ? "text-slate-700" : "text-gray-300"}`}>
+              {user.name || "User QR"}
+            </p>
+            <p className={`text-xs ${theme === "light" ? "text-slate-400" : "text-gray-500"}`}>
+              Show this to the receptionist
+            </p>
+            <button
+              onClick={() => setShowQrPopup(false)}
+              className={`mt-1 px-6 py-2 rounded-xl text-sm font-medium transition ${
+                theme === "light"
+                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+            >
+              Close
+            </button>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 };

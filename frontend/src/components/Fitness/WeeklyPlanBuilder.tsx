@@ -522,7 +522,7 @@ const WeeklyPlanBuilder: React.FC<WeeklyPlanBuilderProps> = ({
         </div>
       )}
       {exerciseEditor && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="card max-w-md w-full p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold">Exercise Settings</h3>

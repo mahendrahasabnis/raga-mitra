@@ -887,14 +887,25 @@ If any field is unknown, use empty string or empty arrays. Return only JSON.`;
   }
 }
 
+/** Patient context for age/sex-specific normal ranges */
+export interface PatientContext {
+  sex?: string;  // M or F
+  age?: number;  // years
+}
+
 /**
  * Extract test result data from base64 image/PDF data
  */
 export async function extractTestResultDataFromBase64(
   base64Data: string,
-  fileType: string
+  fileType: string,
+  patientContext?: PatientContext
 ): Promise<ExtractedTestResultData> {
-  const prompt = `You are a medical test result analysis AI. Analyze this test result/report document and extract structured data for vital parameters.
+  const sexStr = patientContext?.sex ? ` Sex: ${patientContext.sex}.` : '';
+  const ageStr = patientContext?.age != null ? ` Age: ${patientContext.age} years.` : '';
+  const patientNote = sexStr || ageStr ? `\n\nPATIENT CONTEXT (use for age/sex-specific normal ranges when not on report):${sexStr}${ageStr} Apply medical knowledge to derive appropriate reference ranges for this patient when the report does not provide them (e.g. Hemoglobin: adult male 13.5-17.5 g/dL, adult female 12.0-15.5 g/dL; pediatric ranges vary by age; creatinine, eGFR vary with age/sex).` : '';
+
+  const prompt = `You are a medical test result analysis AI. Analyze this test result/report document and extract structured data for vital parameters.${patientNote}
 
 CRITICAL INSTRUCTIONS FOR VITAL PARAMETERS:
 1. Extract ONLY numeric values - if value is text like "normal" or "abnormal", try to find the actual numeric value from the report. If no numeric value exists, set value to null and skip in parameters array.
@@ -909,7 +920,7 @@ CRITICAL INSTRUCTIONS FOR VITAL PARAMETERS:
    - General: "Weight" (in kg), "BMI", "Height" (in cm)
    - Other common: "ESR", "CRP", "Vitamin D", "Vitamin B12", "Folic Acid"
 3. Always extract numeric value - NEVER use text values like "normal", "abnormal", "high", "low"
-4. Extract normal ranges (min/max) from the report if available
+4. Extract normal ranges (min/max) from the report if available. If NOT on the report, derive them using medical knowledge and patient sex/age when provided.
 5. Mark is_abnormal as true if value is outside normal range
 
 Return ONLY a valid JSON object (no markdown, no code blocks, just pure JSON) with this EXACT structure:
@@ -924,8 +935,8 @@ Return ONLY a valid JSON object (no markdown, no code blocks, just pure JSON) wi
       "parameter_name": "Hemoglobin (use standardized name from list above)",
       "value": 14.5 (MUST be numeric, NEVER string - extract actual number from report),
       "unit": "g/dL (extract unit from report)",
-      "normal_range_min": 12.0 (extract from report if available, otherwise null),
-      "normal_range_max": 16.0 (extract from report if available, otherwise null),
+      "normal_range_min": 12.0 (extract from report if available; if not, derive from medical knowledge using patient sex/age when provided; otherwise null),
+      "normal_range_max": 16.0 (extract from report if available; if not, derive from medical knowledge using patient sex/age when provided; otherwise null),
       "is_abnormal": false (true if value outside normal range, false otherwise)
     }
   ],
@@ -974,8 +985,16 @@ IMPORTANT:
 /**
  * Extract test result data from image/PDF (URL-based, kept for backward compatibility)
  */
-export async function extractTestResultData(fileUrl: string, fileType: string): Promise<ExtractedTestResultData> {
-  const prompt = `You are a medical test result analysis AI. Analyze this test result/report document and extract structured data for vital parameters.
+export async function extractTestResultData(
+  fileUrl: string,
+  fileType: string,
+  patientContext?: PatientContext
+): Promise<ExtractedTestResultData> {
+  const sexStr = patientContext?.sex ? ` Sex: ${patientContext.sex}.` : '';
+  const ageStr = patientContext?.age != null ? ` Age: ${patientContext.age} years.` : '';
+  const patientNote = sexStr || ageStr ? `\n\nPATIENT CONTEXT (use for age/sex-specific normal ranges when not on report):${sexStr}${ageStr} Apply medical knowledge to derive appropriate reference ranges for this patient when the report does not provide them (e.g. Hemoglobin: adult male 13.5-17.5 g/dL, adult female 12.0-15.5 g/dL; pediatric ranges vary by age; creatinine, eGFR vary with age/sex).` : '';
+
+  const prompt = `You are a medical test result analysis AI. Analyze this test result/report document and extract structured data for vital parameters.${patientNote}
 
 CRITICAL INSTRUCTIONS FOR VITAL PARAMETERS:
 1. Extract ONLY numeric values - if value is text like "normal" or "abnormal", try to find the actual numeric value from the report. If no numeric value exists, set value to null and skip in parameters array.
@@ -990,7 +1009,7 @@ CRITICAL INSTRUCTIONS FOR VITAL PARAMETERS:
    - General: "Weight" (in kg), "BMI", "Height" (in cm)
    - Other common: "ESR", "CRP", "Vitamin D", "Vitamin B12", "Folic Acid"
 3. Always extract numeric value - NEVER use text values like "normal", "abnormal", "high", "low"
-4. Extract normal ranges (min/max) from the report if available
+4. Extract normal ranges (min/max) from the report if available. If NOT on the report, derive them using medical knowledge and patient sex/age when provided.
 5. Mark is_abnormal as true if value is outside normal range
 
 Return ONLY a valid JSON object (no markdown, no code blocks, just pure JSON) with this EXACT structure:
@@ -1005,8 +1024,8 @@ Return ONLY a valid JSON object (no markdown, no code blocks, just pure JSON) wi
       "parameter_name": "Hemoglobin (use standardized name from list above)",
       "value": 14.5 (MUST be numeric, NEVER string - extract actual number from report),
       "unit": "g/dL (extract unit from report)",
-      "normal_range_min": 12.0 (extract from report if available, otherwise null),
-      "normal_range_max": 16.0 (extract from report if available, otherwise null),
+      "normal_range_min": 12.0 (extract from report if available; if not, derive from medical knowledge using patient sex/age when provided; otherwise null),
+      "normal_range_max": 16.0 (extract from report if available; if not, derive from medical knowledge using patient sex/age when provided; otherwise null),
       "is_abnormal": false (true if value outside normal range, false otherwise)
     }
   ],

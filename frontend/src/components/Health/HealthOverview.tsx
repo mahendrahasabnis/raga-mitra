@@ -9,6 +9,7 @@ interface HealthOverviewProps {
   upcomingAppointment?: any;
   latestDiagnostic?: any;
   keyVitals?: any[];
+  showOnlyVitals?: boolean;
 }
 
 const HealthOverview: React.FC<HealthOverviewProps> = ({
@@ -19,10 +20,12 @@ const HealthOverview: React.FC<HealthOverviewProps> = ({
   upcomingAppointment,
   latestDiagnostic,
   keyVitals = [],
+  showOnlyVitals = false,
 }) => {
   return (
     <div className="space-y-4 overflow-x-hidden">
       {/* Stats Grid */}
+      {!showOnlyVitals && (
       <div className="grid grid-cols-2 gap-3">
         <div className="health-stat-card health-stat-card--rose card p-4 bg-gradient-to-br from-rose-500/20 to-rose-600/10 border border-rose-400/30">
           <div className="flex items-center gap-2 mb-2">
@@ -56,9 +59,10 @@ const HealthOverview: React.FC<HealthOverviewProps> = ({
           <p className="text-2xl font-semibold text-emerald-100">{vitalsCount}</p>
         </div>
       </div>
+      )}
 
       {/* Upcoming Appointment */}
-      {upcomingAppointment && (
+      {!showOnlyVitals && upcomingAppointment && (
         <div className="card p-4 health-overview-section">
           <div className="flex items-center gap-2 mb-3">
             <Stethoscope className="h-5 w-5 text-rose-200 health-overview-section-icon" />
@@ -79,7 +83,7 @@ const HealthOverview: React.FC<HealthOverviewProps> = ({
       )}
 
       {/* Latest Diagnostic Summary */}
-      {latestDiagnostic && (
+      {!showOnlyVitals && latestDiagnostic && (
         <div className="card p-4 health-overview-section">
           <div className="flex items-center gap-2 mb-3">
             <FileText className="h-5 w-5 text-purple-200 health-overview-section-icon" />

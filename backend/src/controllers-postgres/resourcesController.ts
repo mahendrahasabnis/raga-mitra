@@ -172,14 +172,14 @@ export const addResource = async (req: any, res: Response) => {
       // Format as PostgreSQL array literal: '{value1,value2}'
       const arrayLiteral = `{${rolesArray.map(r => `"${r}"`).join(',')}}`;
       await sharedSequelize.query(
-        `INSERT INTO platform_privileges (user_id, platform_name, roles, permissions, is_active, created_at, updated_at)
-         VALUES (:userId, :platformName, :roles::text[], :permissions::jsonb, TRUE, NOW(), NOW())`,
+        `INSERT INTO platform_privileges (id, user_id, platform_name, roles, permissions, is_active, created_at, updated_at)
+         VALUES (:id, :userId, :platformName, :roles::text[], '{}'::varchar[], TRUE, NOW(), NOW())`,
         {
           replacements: {
+            id: uuidv4(),
             userId: resourceUserId,
             platformName,
             roles: arrayLiteral,
-            permissions: JSON.stringify([]),
           },
           type: QueryTypes.INSERT,
         }
@@ -626,6 +626,62 @@ export const listDashPatients = async (req: any, res: Response) => {
     return res.json({ patients: list });
   } catch (err: any) {
     console.error('❌ [RESOURCES] listDashPatients error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const listEmployers = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const sequelize = await getAppSequelize();
+    await ensurePatientResourcesTable();
+    const sharedSequelize = await getSharedSequelize();
+
+    const rows: any = await sequelize.query(
+      `SELECT DISTINCT patient_user_id, roles FROM patient_resources WHERE resource_user_id = :userId`,
+      { replacements: { userId }, type: QueryTypes.SELECT }
+    );
+
+    const rowsArray = Array.isArray(rows) ? rows : [];
+    const employers: Array<{ id: string; name: string; phone: string; employerRoles: string[] }> = [];
+
+    for (const row of rowsArray) {
+      if (!row?.patient_user_id) continue;
+      try {
+        const users: any = await sharedSequelize.query(
+          `SELECT id, name, phone FROM users WHERE id = :empId LIMIT 1`,
+          { replacements: { empId: row.patient_user_id }, type: QueryTypes.SELECT }
+        );
+        const emp = Array.isArray(users) && users.length > 0 ? users[0] : null;
+        if (!emp) continue;
+
+        let empRoles: string[] = [];
+        try {
+          const privRows: any = await sharedSequelize.query(
+            `SELECT roles FROM platform_privileges WHERE user_id = :empId AND platform_name = 'aarogya-mitra' LIMIT 1`,
+            { replacements: { empId: row.patient_user_id }, type: QueryTypes.SELECT }
+          );
+          if (privRows.length > 0 && privRows[0].roles) {
+            empRoles = Array.isArray(privRows[0].roles) ? privRows[0].roles : [];
+          }
+        } catch (_e) { /* platform_privileges may not exist */ }
+
+        employers.push({
+          id: emp.id,
+          name: emp.name || 'Unknown',
+          phone: emp.phone || '',
+          employerRoles: empRoles.map((r: string) => String(r).toLowerCase()),
+        });
+      } catch (e: any) {
+        console.warn('⚠️ [RESOURCES] listEmployers skip:', row.patient_user_id, e?.message);
+      }
+    }
+
+    return res.json({ employers });
+  } catch (err: any) {
+    console.error('❌ [RESOURCES] listEmployers error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
   }
 };

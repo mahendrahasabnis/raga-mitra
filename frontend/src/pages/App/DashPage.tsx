@@ -105,8 +105,8 @@ const DashPage: React.FC = () => {
     <div className="space-y-4 overflow-x-hidden">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Patient Dashboard</h2>
-          <p className="text-sm text-gray-500">Leaderboard, vitals, compliance & monitoring</p>
+          <h2 className="text-2xl font-bold text-[var(--foreground)]">Patient Dashboard</h2>
+          <p className="text-sm text-gray-400">Leaderboard, vitals, compliance & monitoring</p>
         </div>
         <button
           onClick={() => setShowAddForm(true)}

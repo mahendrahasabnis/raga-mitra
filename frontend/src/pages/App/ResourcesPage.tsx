@@ -1,8 +1,20 @@
-import React, { useEffect, useState } from "react";
-import { Users, Stethoscope, Dumbbell, Salad, PhoneCall, MessageCircle, MessageSquare, Plus, Search, X, Trash2 } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Users, Stethoscope, Dumbbell, Salad, PhoneCall, MessageCircle, MessageSquare, Plus, Search, X, Trash2, ClipboardList, Heart, UserCog } from "lucide-react";
 import { resourcesApi, userApi } from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+
+const ALL_ROLE_META: Record<string, { label: string; icon: (cls: string) => React.ReactNode }> = {
+  Doctor:           { label: 'Doctor',           icon: (c) => <Stethoscope className={`${c} text-blue-400`} /> },
+  FitnessTrainer:   { label: 'Fitness Trainer',  icon: (c) => <Dumbbell className={`${c} text-emerald-400`} /> },
+  Dietitian:        { label: 'Dietitian',        icon: (c) => <Salad className={`${c} text-rose-400`} /> },
+  Receptionist:     { label: 'Receptionist',     icon: (c) => <ClipboardList className={`${c} text-purple-400`} /> },
+  Nurse:            { label: 'Nurse',            icon: (c) => <Heart className={`${c} text-pink-400`} /> },
+  AssistantTrainer: { label: 'Asst. Trainer',    icon: (c) => <UserCog className={`${c} text-teal-400`} /> },
+  FamilyMember:     { label: 'Family Member',    icon: (c) => <Users className={`${c} text-amber-400`} /> },
+};
 
 const ResourcesPage: React.FC = () => {
+  const { user } = useAuth();
   const [resources, setResources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -20,6 +32,19 @@ const ResourcesPage: React.FC = () => {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  const availableRoles = useMemo(() => {
+    const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
+    const userRoles = (plat?.roles || []).concat(user?.role ? [user.role] : []).map((r) => String(r).toLowerCase());
+    const roles = ['Doctor', 'FitnessTrainer', 'Dietitian'];
+    const isDoctor = userRoles.some(r => r === 'doctor');
+    const isDietitian = userRoles.some(r => ['dietitian', 'dietition', 'nutritionist'].includes(r));
+    const isTrainer = userRoles.some(r => ['fitnesstrainer', 'fitness trainer'].includes(r));
+    if (isDoctor || isDietitian) { roles.push('Receptionist', 'Nurse'); }
+    if (isTrainer) { roles.push('AssistantTrainer'); }
+    roles.push('FamilyMember');
+    return roles;
+  }, [user]);
 
   useEffect(() => {
     fetchResources();
@@ -66,10 +91,8 @@ const ResourcesPage: React.FC = () => {
     const name = formData.get("name") as string;
     const phone = formData.get("phone") as string;
     
-    // Get selected roles from checkboxes
     const selectedRoles: string[] = [];
-    const roles = ['Doctor', 'FitnessTrainer', 'Dietitian'];
-    roles.forEach(role => {
+    Object.keys(ALL_ROLE_META).forEach(role => {
       if (formData.get(`role-${role}`) === 'on') {
         selectedRoles.push(role);
       }
@@ -206,39 +229,26 @@ const ResourcesPage: React.FC = () => {
   };
 
   const getRoleIcon = (role: string) => {
-    switch (role?.toLowerCase()) {
-      case 'doctor':
-        return <Stethoscope className="h-4 w-4 text-blue-400" />;
-      case 'fitnesstrainer':
-      case 'fitness trainer':
-        return <Dumbbell className="h-4 w-4 text-emerald-400" />;
-      case 'dietitian':
-        return <Salad className="h-4 w-4 text-rose-400" />;
-      default:
-        return <Users className="h-4 w-4 text-gray-400" />;
-    }
+    const meta = ALL_ROLE_META[role];
+    if (meta) return meta.icon("h-4 w-4");
+    return <Users className="h-4 w-4 text-gray-400" />;
   };
 
   const getRoleIconsGrid = (roles: string[]) => {
     if (!roles || roles.length === 0) {
       return <Users className="h-5 w-5 text-gray-400" />;
     }
-    
-    // Show up to 4 roles in a 2x2 grid
     const displayRoles = roles.slice(0, 4);
-    const roleMap: { [key: string]: React.ReactNode } = {
-      'Doctor': <Stethoscope className="h-4 w-4 text-blue-400" />,
-      'FitnessTrainer': <Dumbbell className="h-4 w-4 text-emerald-400" />,
-      'Dietitian': <Salad className="h-4 w-4 text-rose-400" />,
-    };
-
     return (
       <div className="grid grid-cols-2 gap-1 w-10 h-10">
-        {displayRoles.map((role, index) => (
-          <div key={index} className="flex items-center justify-center">
-            {roleMap[role] || <Users className="h-3 w-3 text-gray-400" />}
-          </div>
-        ))}
+        {displayRoles.map((role, index) => {
+          const meta = ALL_ROLE_META[role];
+          return (
+            <div key={index} className="flex items-center justify-center">
+              {meta ? meta.icon("h-4 w-4") : <Users className="h-3 w-3 text-gray-400" />}
+            </div>
+          );
+        })}
         {displayRoles.length < 4 && Array.from({ length: 4 - displayRoles.length }).map((_, index) => (
           <div key={`empty-${index}`} className="w-4 h-4" />
         ))}
@@ -297,6 +307,7 @@ const ResourcesPage: React.FC = () => {
           onClose={() => setShowAddForm(false)}
           onAdd={handleAdd}
           onLookup={handleLookup}
+          availableRoles={availableRoles}
         />
       )}
 
@@ -368,8 +379,9 @@ const ResourcesPage: React.FC = () => {
                   <div className="mt-3 pt-3 border-t border-white/10 resources-card-divider">
                     <p className="text-xs text-gray-400 mb-2">Roles:</p>
                     <div className="flex flex-wrap gap-2">
-                      {['Doctor', 'FitnessTrainer', 'Dietitian'].map((role) => {
+                      {[...new Set([...availableRoles, ...roles])].map((role) => {
                         const isActive = roles.includes(role);
+                        const meta = ALL_ROLE_META[role];
                         return (
                           <button
                             key={role}
@@ -381,7 +393,7 @@ const ResourcesPage: React.FC = () => {
                             } hover:bg-opacity-30`}
                           >
                             {getRoleIcon(role)}
-                            <span className="ml-1.5">{role === 'FitnessTrainer' ? 'Fitness Trainer' : role}</span>
+                            <span className="ml-1.5">{meta?.label || role}</span>
                           </button>
                         );
                       })}
@@ -455,10 +467,11 @@ const AddResourceForm: React.FC<{
   onClose: () => void;
   onAdd: (e: React.FormEvent<HTMLFormElement>) => void;
   onLookup: (phone: string, setName: (name: string) => void) => void;
-}> = ({ onClose, onAdd, onLookup }) => {
+  availableRoles: string[];
+}> = ({ onClose, onAdd, onLookup, availableRoles }) => {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [selectedRoles, setSelectedRoles] = useState<string[]>(['Doctor']);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([availableRoles[0] || 'Doctor']);
 
   useEffect(() => {
     if (phone.length >= 10) {
@@ -475,19 +488,6 @@ const AddResourceForm: React.FC<{
     );
   };
 
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'Doctor':
-        return <Stethoscope className="h-4 w-4" />;
-      case 'FitnessTrainer':
-        return <Dumbbell className="h-4 w-4" />;
-      case 'Dietitian':
-        return <Salad className="h-4 w-4" />;
-      default:
-        return null;
-    }
-  };
-
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between mb-4">
@@ -500,21 +500,24 @@ const AddResourceForm: React.FC<{
         <div>
           <label className="block text-sm font-medium mb-2">Roles (Select one or more)</label>
           <div className="space-y-2">
-            {['Doctor', 'FitnessTrainer', 'Dietitian'].map((role) => (
-              <label key={role} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  name={`role-${role}`}
-                  checked={selectedRoles.includes(role)}
-                  onChange={() => toggleRole(role)}
-                  className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-emerald-500 focus:ring-emerald-500"
-                />
-                <div className="flex items-center gap-2">
-                  {getRoleIcon(role)}
-                  <span className="text-sm">{role === 'FitnessTrainer' ? 'Fitness Trainer' : role}</span>
-                </div>
-              </label>
-            ))}
+            {availableRoles.map((role) => {
+              const meta = ALL_ROLE_META[role];
+              return (
+                <label key={role} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name={`role-${role}`}
+                    checked={selectedRoles.includes(role)}
+                    onChange={() => toggleRole(role)}
+                    className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-emerald-500 focus:ring-emerald-500"
+                  />
+                  <div className="flex items-center gap-2">
+                    {meta?.icon("h-4 w-4")}
+                    <span className="text-sm">{meta?.label || role}</span>
+                  </div>
+                </label>
+              );
+            })}
           </div>
         </div>
         <div>

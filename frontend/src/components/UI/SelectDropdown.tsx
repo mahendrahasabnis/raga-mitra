@@ -75,13 +75,13 @@ const SelectDropdown: React.FC<SelectDropdownProps> = ({
         ref={buttonRef}
         disabled={disabled}
       >
-        <span className={`truncate ${selected ? "" : "text-gray-400"}`}>{label}</span>
-        <span className="text-xs text-gray-400">▾</span>
+        <span className={`truncate ${selected ? "text-[var(--foreground)]" : "text-gray-400"}`}>{label}</span>
+        <span className="text-xs text-gray-400 shrink-0">▾</span>
       </button>
       {open &&
         createPortal(
           <div
-            className="fixed z-[9999] rounded-xl border border-white/10 bg-[var(--panel)] shadow-lg backdrop-blur max-h-64 overflow-y-auto"
+            className="fixed z-[10000] rounded-xl border border-white/10 bg-[var(--panel)] shadow-lg backdrop-blur max-h-64 overflow-y-auto"
             style={{ top: panelStyle.top, left: panelStyle.left, width: panelStyle.width }}
           >
             {options.map((option, index) => (

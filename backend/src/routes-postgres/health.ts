@@ -23,9 +23,12 @@ const upload = multer({
 const router = Router();
 
 // Appointments
+router.get('/appointments/my-patients', authenticate, healthController.getMyPatientAppointments);
 router.get('/appointments', authenticate, healthController.getAppointments);
 router.get('/appointments/:id', authenticate, healthController.getAppointment);
 router.get('/appointments/:id/details', authenticate, healthController.getAppointmentDetails);
+router.post('/appointments/scan-lookup', authenticate, healthController.scanLookup);
+router.post('/appointments/scan-checkin', authenticate, healthController.scanCheckin);
 router.post('/appointments', authenticate, healthController.createAppointment);
 router.put('/appointments/:id', authenticate, healthController.updateAppointment);
 router.put('/appointments/:id/details', authenticate, healthController.updateAppointmentDetails);
@@ -49,6 +52,7 @@ router.post('/reports/upload', authenticate, healthController.uploadReport);
 router.get('/reports', authenticate, healthController.listReports);
 router.get('/reports/:reportId', authenticate, healthController.getReport);
 router.get('/reports/:reportId/file', authenticate, healthController.getReportFile);
+router.delete('/reports/:reportId', authenticate, healthController.deleteReport);
 router.post('/reports/:reportId/extract', authenticate, healthController.extractReport);
 router.post('/vitals/confirm', authenticate, healthController.confirmVitals);
 
@@ -57,6 +61,9 @@ router.get('/vitals', authenticate, healthController.getVitals);
 router.get('/vitals/graph', authenticate, healthController.getVitalsGraph);
 router.get('/vitals/trends', authenticate, healthController.getVitalsTrends);
 router.post('/vitals', authenticate, healthController.addVital);
+router.put('/vitals/:id', authenticate, healthController.updateVital);
+router.delete('/vitals/:id', authenticate, healthController.deleteVitals);
+router.delete('/vitals', authenticate, healthController.deleteVitals);
 
 // Live Monitoring (Institution Admissions)
 router.get('/admissions', authenticate, healthController.getAdmissions);
@@ -67,6 +74,7 @@ router.delete('/admissions/:id', authenticate, healthController.deleteAdmission)
 router.get('/admissions/:admissionId/readings', authenticate, healthController.getMonitoringReadings);
 router.get('/admissions/:admissionId/readings/template', authenticate, healthController.getMonitoringTemplate);
 router.post('/admissions/:admissionId/readings', authenticate, healthController.addMonitoringReadings);
+router.delete('/admissions/:admissionId/readings', authenticate, healthController.deleteMonitoringReadings);
 router.post('/admissions/:admissionId/readings/preview', authenticate, upload.single('file'), healthController.previewMonitoringImport);
 router.post('/admissions/:admissionId/readings/import', authenticate, upload.single('file'), healthController.importMonitoringReadings);
 router.get('/admissions/:admissionId/treatments', authenticate, healthController.getAdmissionTreatments);

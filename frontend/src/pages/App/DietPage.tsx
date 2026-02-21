@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useSelectedClient } from "../../contexts/ClientContext";
-import { dietApi } from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+import { dietApi, resourcesApi } from "../../services/api";
 import { Salad, Calendar, Target, BookOpen, Layout } from "lucide-react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import DietOverview from "../../components/Diet/DietOverview";
@@ -9,6 +10,7 @@ import CalendarView from "../../components/Diet/CalendarView";
 import SessionDetail from "../../components/Diet/SessionDetail";
 import MealLibrary from "../../components/Diet/MealLibrary";
 import SelectDropdown from "../../components/UI/SelectDropdown";
+import MyPatientAppointments from "../../components/Shared/MyPatientAppointments";
 
 type TabType = "overview" | "weekly" | "calendar" | "library";
 
@@ -17,12 +19,38 @@ const DietPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("sessionId");
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>("overview");
+
+  const hasResourceRole = useMemo(() => {
+    const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
+    const roles = (plat?.roles || []).concat(user?.role ? [user.role] : []);
+    return roles.some((r) => r && ['doctor', 'fitnesstrainer', 'fitness trainer', 'dietitian', 'dietition', 'nutritionist'].includes(String(r).toLowerCase()));
+  }, [user]);
+
+  const hasAssistantRole = useMemo(() => {
+    const plat = user?.privileges?.find((p) => p.platform === "aarogya-mitra");
+    const roles = (plat?.roles || []).concat(user?.role ? [user.role] : []);
+    return roles.some((r) => r && ['receptionist', 'nurse', 'assistanttrainer', 'assistant trainer', 'familymember', 'family member'].includes(String(r).toLowerCase()));
+  }, [user]);
+
   const [progress, setProgress] = useState<any>({});
   const [streak, setStreak] = useState(0);
   const [nextSession, setNextSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const selectedClient = useSelectedClient();
+
+  const [employers, setEmployers] = useState<Array<{ id: string; name: string; phone: string; employerRoles: string[] }>>([]);
+
+  useEffect(() => {
+    if (!hasAssistantRole || selectedClient) return;
+    resourcesApi.getMyEmployers().then(res => setEmployers(res.employers || [])).catch(() => setEmployers([]));
+  }, [hasAssistantRole, selectedClient]);
+
+  const dietitianEmployers = useMemo(() =>
+    employers.filter(e => e.employerRoles.some(r => ['dietitian', 'dietition', 'nutritionist'].includes(r))),
+    [employers]
+  );
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [weekTemplates, setWeekTemplates] = useState<any[]>([]);
   const [calendarTemplateId, setCalendarTemplateId] = useState<string>(
@@ -244,12 +272,14 @@ const DietPage: React.FC = () => {
     skipped: progress?.stats?.skipped_count || 0,
   };
 
-  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
-    { id: "overview", label: "Overview", icon: <Target className="h-4 w-4" /> },
-    { id: "weekly", label: "Template", icon: <Layout className="h-4 w-4" /> },
-    { id: "calendar", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
-    { id: "library", label: "Library", icon: <BookOpen className="h-4 w-4" /> },
-  ];
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = selectedClient
+    ? [{ id: "overview", label: "Overview", icon: <Target className="h-4 w-4" /> }]
+    : [
+        { id: "overview", label: "Overview", icon: <Target className="h-4 w-4" /> },
+        { id: "weekly", label: "Template", icon: <Layout className="h-4 w-4" /> },
+        { id: "calendar", label: "Calendar", icon: <Calendar className="h-4 w-4" /> },
+        { id: "library", label: "Library", icon: <BookOpen className="h-4 w-4" /> },
+      ];
 
   if (date && selectedSession) {
     return (
@@ -282,32 +312,52 @@ const DietPage: React.FC = () => {
 
   return (
     <div className="space-y-4 overflow-x-hidden">
+      {/* Header */}
+      <div>
+        <h2 className="text-2xl font-bold text-[var(--foreground)]">{selectedClient ? "Diet" : "My Diet"}</h2>
+        <p className="text-sm text-gray-400">Meal plans, calendar, and nutrition</p>
+      </div>
+
+      {tabs.length > 1 && (
       <div className="card p-2 diet-page-tabs-card">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-4 gap-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`diet-page-tab flex flex-col items-center gap-1 px-3 py-2 rounded-lg transition ${
+              className={`diet-page-tab flex flex-col items-center justify-center gap-1 py-2 rounded-lg transition ${
                 activeTab === tab.id
                   ? "diet-page-tab--active bg-blue-500/20 text-blue-200 border border-blue-400/30"
-                  : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                  : "text-gray-300 hover:text-gray-100 hover:bg-white/5"
               }`}
             >
               {tab.icon}
-              <span className="text-xs truncate">{tab.label}</span>
+              <span className="w-full text-center text-[11px] truncate px-1">{tab.label}</span>
             </button>
           ))}
         </div>
       </div>
+      )}
 
       {activeTab === "overview" && (
-        <DietOverview
-          progress={progress}
-          streak={streak}
-          nextSession={nextSession}
-          weekStats={weekStats}
-        />
+        <>
+          <DietOverview
+            progress={progress}
+            streak={streak}
+            nextSession={nextSession}
+            weekStats={weekStats}
+          />
+          {hasResourceRole && !selectedClient && (
+            <MyPatientAppointments sectionTitle="My Patient Appointments" />
+          )}
+          {hasAssistantRole && !selectedClient && dietitianEmployers.map(emp => (
+            <MyPatientAppointments
+              key={emp.id}
+              sectionTitle={`${emp.name}'s Patient Appointments`}
+              forDoctorId={emp.id}
+            />
+          ))}
+        </>
       )}
 
       {activeTab === "weekly" && (

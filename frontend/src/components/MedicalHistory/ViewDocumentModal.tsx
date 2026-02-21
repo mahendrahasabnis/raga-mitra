@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { X, FileText, Pill, TestTube, Receipt, Edit, Trash2, Calendar } from 'lucide-react';
 
 interface Medication {
@@ -347,8 +348,8 @@ const ViewDocumentModal: React.FC<ViewDocumentModalProps> = ({
     );
   };
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center p-4">
       <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -390,7 +391,8 @@ const ViewDocumentModal: React.FC<ViewDocumentModalProps> = ({
           {documentType === 'receipt' && renderReceipt(document as ReceiptData)}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

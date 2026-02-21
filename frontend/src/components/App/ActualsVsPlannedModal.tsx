@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, CheckCircle2 } from "lucide-react";
 
 export type SessionItemType = "appointment" | "medicine" | "exercise" | "meal";
@@ -46,8 +47,8 @@ const ActualsVsPlannedModal: React.FC<ActualsVsPlannedModalProps> = ({
           ? "Exercise session"
           : "Meal";
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
       <div className="card max-w-md w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] px-4 py-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Actuals vs Planned</h2>
@@ -125,7 +126,8 @@ const ActualsVsPlannedModal: React.FC<ActualsVsPlannedModalProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

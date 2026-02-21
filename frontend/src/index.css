@@ -66,14 +66,19 @@
     letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* iOS standalone: prevent rubber-band overscroll revealing white gaps */
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     min-height: 100vh;
+    min-height: 100dvh;
     background: linear-gradient(135deg, var(--canvas-gradient-start), var(--canvas-gradient-end));
     color: var(--foreground);
     position: relative;
     overflow-x: hidden;
+    overscroll-behavior: none;
   }
 
   /* Hide horizontal scrollbar for Health and Fitness modules */
@@ -173,6 +178,11 @@
     z-index: 2;
   }
 
+  /* Popups (modals, dropdowns, pickers) – render above header (z-20) and footer (z-30) */
+  .z-popup {
+    z-index: 10000;
+  }
+
   /* Text Selection */
   ::selection {
     background: rgba(230, 59, 68, 0.25);
@@ -257,6 +267,10 @@
     line-height: 1;
   }
 
+  .btn-secondary svg {
+    color: currentColor;
+  }
+
   .btn-secondary:hover:not(:disabled) {
     background: var(--panel-strong);
     border-color: var(--primary);
@@ -321,7 +335,7 @@
     padding: 0.875rem 1rem;
     border-radius: var(--border-radius);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    background-color: var(--panel);
+    background-color: rgba(40, 24, 28, 0.85);
     color: var(--foreground);
     border: 1px solid var(--border);
     font-family: 'Inter', system-ui, sans-serif;
@@ -329,10 +343,19 @@
     letter-spacing: -0.01em;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    -webkit-text-fill-color: var(--foreground);
   }
 
   .input-field::placeholder {
-    color: var(--muted);
+    color: #b8bfc9;
+    opacity: 0.95;
+  }
+
+  .input-field:-webkit-autofill,
+  .input-field:-webkit-autofill:hover,
+  .input-field:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--foreground);
+    -webkit-box-shadow: 0 0 0 1000px rgba(40, 24, 28, 0.85) inset;
   }
 
   .input-field:focus {
@@ -518,15 +541,106 @@
     background: #f1f5f9;
   }
 
-  /* Health page: active tab readable in light mode */
+  /* Active tabs readable in light mode */
   [data-theme="light"] .health-page-tab--active {
     color: #9f1239 !important;
     background: rgba(190, 18, 60, 0.12) !important;
     border-color: #e11d48 !important;
   }
 
+  [data-theme="light"] .sub-tab--active {
+    color: #9f1239 !important;
+    background: rgba(190, 18, 60, 0.12) !important;
+    border-color: #e11d48 !important;
+  }
+
+  [data-theme="light"] .sub-tab:not(.sub-tab--active) {
+    color: #334155;
+    background: #f1f5f9;
+  }
+
+  /* Vitals / diagnostic table headers readable in light mode */
+  [data-theme="light"] .vitals-table thead {
+    background: #f1f5f9 !important;
+  }
+
+  [data-theme="light"] .vitals-table th {
+    color: #1e293b !important;
+  }
+
+  [data-theme="light"] .vitals-table td {
+    color: #334155;
+  }
+
+  [data-theme="light"] .vitals-table select {
+    background: #ffffff;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+
+  /* Monitor chart cards readable in light mode */
+  [data-theme="light"] .monitor-chart-card {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+  }
+
+  [data-theme="light"] .monitor-chart-card h5 {
+    color: #0f172a;
+  }
+
   [data-theme="light"] .health-page-tab--active svg {
     color: inherit;
+  }
+
+  [data-theme="light"] .health-page-tab:not(.health-page-tab--active) {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .health-page-tab:not(.health-page-tab--active) svg {
+    color: inherit;
+  }
+
+  [data-theme="light"] .health-page-tab:not(.health-page-tab--active):hover {
+    background: rgba(15, 23, 42, 0.06) !important;
+  }
+
+  /* Calendar day cards (Fitness & Diet): readable in light mode */
+  [data-theme="light"] .calendar-day-card {
+    background: #f8fafc !important;
+    border-color: #cbd5e1 !important;
+    color: #1e293b;
+  }
+
+  [data-theme="light"] .calendar-day-card:hover {
+    background: #f1f5f9 !important;
+  }
+
+  [data-theme="light"] .calendar-day-card .text-gray-500 {
+    color: #64748b !important;
+  }
+
+  [data-theme="light"] .calendar-day-card .text-gray-400 {
+    color: #475569 !important;
+  }
+
+  [data-theme="light"] .calendar-day-card .text-gray-300 {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .calendar-day-card .text-gray-200 {
+    color: #1e293b !important;
+  }
+
+  [data-theme="light"] .calendar-day-card .bg-white\/10 {
+    background-color: rgba(15, 23, 42, 0.06) !important;
+  }
+
+  [data-theme="light"] .calendar-summary-bar {
+    color: #64748b !important;
+  }
+
+  [data-theme="light"] .calendar-summary-bar .text-gray-200 {
+    color: #0f172a !important;
   }
 
   /* Health overview stat cards: dark text in light mode */
@@ -660,6 +774,11 @@
     box-shadow: var(--shadow-card);
   }
 
+  [data-theme="light"] .health-page-tabs-card {
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-card);
+  }
+
   /* Resources page: card depth and text contrast in light mode */
   [data-theme="light"] .resources-search-card,
   [data-theme="light"] .resources-resource-card {
@@ -710,6 +829,49 @@
 
   [data-theme="light"] .resources-role-btn--active svg {
     color: inherit;
+  }
+
+  [data-theme="light"] .import-summary-box {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: #6ee7b7;
+  }
+
+  [data-theme="light"] .import-summary-box h5,
+  [data-theme="light"] .import-summary-box p {
+    color: #065f46;
+  }
+
+  /* My Patient Appointments widget */
+  [data-theme="light"] .my-patient-appointments-card {
+    border: 1px solid var(--border-light);
+    box-shadow: var(--shadow-card);
+  }
+
+  [data-theme="light"] .my-patient-appointments-card .date-picker-row {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  [data-theme="light"] .patient-appt-card {
+    background: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+  }
+
+  [data-theme="light"] .patient-appt-card:hover {
+    border-color: #f43f5e !important;
+    background: #fff1f2 !important;
+  }
+
+  [data-theme="light"] .patient-appt-card .text-gray-300 {
+    color: #334155 !important;
+  }
+
+  [data-theme="light"] .patient-appt-card .text-gray-400 {
+    color: #64748b !important;
+  }
+
+  [data-theme="light"] .patient-appt-card .text-gray-500 {
+    color: #64748b !important;
   }
 }
 

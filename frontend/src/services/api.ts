@@ -137,6 +137,21 @@ export const healthApi = {
     const response = await api.get('/health/appointments', { params });
     return response.data;
   },
+  scanLookup: async (patientUserId: string) => {
+    const response = await api.post('/health/appointments/scan-lookup', { patientUserId });
+    return response.data;
+  },
+  scanCheckin: async (patientUserId: string, appointmentId?: string, doctorUserId?: string) => {
+    const response = await api.post('/health/appointments/scan-checkin', { patientUserId, appointmentId, doctorUserId });
+    return response.data;
+  },
+  getMyPatientAppointments: async (date?: string, forUserId?: string) => {
+    const params: any = {};
+    if (date) params.date = date;
+    if (forUserId) params.forUserId = forUserId;
+    const response = await api.get('/health/appointments/my-patients', { params });
+    return response.data;
+  },
   getAppointment: async (id: string) => {
     const response = await api.get(`/health/appointments/${id}`);
     return response.data;
@@ -223,13 +238,19 @@ export const healthApi = {
     const response = await api.get('/health/reports', { params });
     return response.data;
   },
+  deleteReport: async (reportId: string, clientId?: string) => {
+    const params: any = {};
+    if (clientId) params.client_id = clientId;
+    const response = await api.delete(`/health/reports/${reportId}`, { params });
+    return response.data;
+  },
   getReport: async (reportId: string, clientId?: string) => {
     const params: any = {};
     if (clientId) params.client_id = clientId;
     const response = await api.get(`/health/reports/${reportId}`, { params });
     return response.data;
   },
-  getReportFileUrl: async (reportId: string, clientId?: string) => {
+  getReportFileUrl: async (reportId: string, clientId?: string): Promise<{ url: string; contentType: string }> => {
     const params: any = {};
     if (clientId) params.client_id = clientId;
     const response = await api.get(`/health/reports/${reportId}/file`, {
@@ -239,7 +260,7 @@ export const healthApi = {
     const blob = response.data;
     const contentType = blob.type || 'application/pdf';
     const url = URL.createObjectURL(new Blob([blob], { type: contentType }));
-    return url;
+    return { url, contentType };
   },
   extractReport: async (reportId: string) => {
     const response = await api.post(`/health/reports/${reportId}/extract`);
@@ -257,8 +278,10 @@ export const healthApi = {
     const response = await api.post('/past-visits/extract-document', payload);
     return response.data;
   },
-  confirmVitals: async (vitals: any[]) => {
-    const response = await api.post('/health/vitals/confirm', { vitals });
+  confirmVitals: async (vitals: any[], clientId?: string) => {
+    const body: any = { vitals };
+    if (clientId) body.client_id = clientId;
+    const response = await api.post('/health/vitals/confirm', body);
     return response.data;
   },
 
@@ -288,6 +311,22 @@ export const healthApi = {
   },
   addVital: async (payload: any) => {
     const response = await api.post('/health/vitals', payload);
+    return response.data;
+  },
+  updateVital: async (id: string, payload: { normal_range_min?: number | null; normal_range_max?: number | null }, clientId?: string) => {
+    const data: any = { ...payload };
+    if (clientId) data.client_id = clientId;
+    const response = await api.put(`/health/vitals/${id}`, data);
+    return response.data;
+  },
+  deleteVitals: async (opts: { id?: string; ids?: string[]; deleteAll?: boolean }, clientId?: string) => {
+    const body: any = { ...opts };
+    if (clientId) body.client_id = clientId;
+    if (opts.id) {
+      const response = await api.delete(`/health/vitals/${opts.id}`, { data: body });
+      return response.data;
+    }
+    const response = await api.delete('/health/vitals', { data: body });
     return response.data;
   },
 
@@ -325,6 +364,16 @@ export const healthApi = {
   },
   addMonitoringReadings: async (admissionId: string, readings: any[], clientId?: string) => {
     const response = await api.post(`/health/admissions/${admissionId}/readings`, { readings, client_id: clientId });
+    return response.data;
+  },
+  deleteMonitoringReadings: async (
+    admissionId: string,
+    opts: { ids?: string[]; deleteAll?: boolean; start_date?: string; end_date?: string },
+    clientId?: string
+  ) => {
+    const body: any = { ...opts };
+    if (clientId) body.client_id = clientId;
+    const response = await api.delete(`/health/admissions/${admissionId}/readings`, { data: body });
     return response.data;
   },
   getMonitoringTemplate: async (admissionId: string, clientId?: string) => {
@@ -715,6 +764,10 @@ export const resourcesApi = {
   },
   getDashPatients: async () => {
     const response = await api.get('/resources/dash-patients');
+    return response.data;
+  },
+  getMyEmployers: async () => {
+    const response = await api.get('/resources/employers');
     return response.data;
   },
 };

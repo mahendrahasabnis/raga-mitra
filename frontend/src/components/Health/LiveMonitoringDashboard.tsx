@@ -180,7 +180,7 @@ const LiveMonitoringDashboard: React.FC<LiveMonitoringDashboardProps> = ({
                 <div className="mt-2 text-sm text-gray-400 space-y-1">
                   {adm.mrn_number && <p>MRN: {adm.mrn_number}</p>}
                   {adm.bed_number && <p>Bed: {adm.bed_number}</p>}
-                  <p>Admitted: {adm.admission_date ? String(adm.admission_date).slice(0, 10) : "—"}</p>
+                  <p>Admitted: {adm.admission_date ? new Date(adm.admission_date).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—"}</p>
                   {adm.consulting_doctor && <p>Dr. {adm.consulting_doctor}</p>}
                 </div>
                 <p className="text-xs text-rose-400/80 mt-2">Click to view monitoring & graphs</p>

@@ -31,7 +31,7 @@ fi
 
 # Enable APIs required for Cloud Build → Cloud Run deploy (avoids interactive prompt in build)
 echo "Enabling required APIs on $TARGET_PROJECT (if needed)..."
-for api in run.googleapis.com cloudbuild.googleapis.com containerregistry.googleapis.com sqladmin.googleapis.com; do
+for api in run.googleapis.com cloudbuild.googleapis.com containerregistry.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com; do
   gcloud services enable "$api" --project="$TARGET_PROJECT" 2>/dev/null || true
 done
 
@@ -69,11 +69,13 @@ if [ -z "$FRONTEND_URL" ]; then
 else
   echo -e "${GREEN}Frontend URL: $FRONTEND_URL${NC}"
   echo ""
-  echo "Step 3: Set backend CORS to allow frontend..."
+  echo "Step 3: Set backend CORS to allow frontend and custom domain..."
+  # Use ^;^ delimiter so commas in CORS_ORIGINS value are preserved
+  CORS_ORIGINS="${FRONTEND_URL},https://aarogyamitra.99platforms.com,http://aarogyamitra.99platforms.com"
   gcloud run services update "$BACKEND_SERVICE" \
     --region="$REGION" \
     --project="$TARGET_PROJECT" \
-    --update-env-vars="CORS_ORIGINS=$FRONTEND_URL"
+    --update-env-vars="^;^CORS_ORIGINS=$CORS_ORIGINS"
 fi
 
 echo ""
@@ -86,8 +88,15 @@ gcloud run services add-iam-policy-binding "$FRONTEND_SERVICE" \
   --member="allUsers" --role="roles/run.invoker" --quiet 2>/dev/null || true
 
 echo ""
+echo "Step 5: Custom domain aarogyamitra.99platforms.com"
+echo -e "${YELLOW}  Cloud Run domain mapping is not supported in asia-south1.${NC}"
+echo "  To map the domain, run: ./setup-custom-domain-lb.sh"
+echo "  Then add the DNS A record at your DNS provider."
+echo ""
 echo -e "${GREEN}Deploy to $TARGET_PROJECT complete.${NC}"
 echo "  Backend:  $BACKEND_URL"
 echo "  Frontend: ${FRONTEND_URL:-（check console）}"
+echo "  Custom:   https://aarogyamitra.99platforms.com (ensure DNS points to Cloud Run)"
 echo ""
-echo "Next: run ./test-aarogya-mitra.sh to verify, then ./delete-from-raga-mitra.sh when ready."
+echo "If domain mapping was created, add the DNS records shown above to your DNS provider."
+echo "Next: run ./test-aarogya-mitra.sh to verify."

@@ -66,6 +66,17 @@ export const ensureHealthTables = async () => {
       CREATE INDEX IF NOT EXISTS idx_admission_treatments_recorded ON admission_treatments (admission_id, recorded_at);
     `, 'institution_admissions + monitoring_readings + admission_treatments');
 
+  // Extend enum_appointments_status with new values needed for QR check-in flow
+  await runBatch(appDb, `
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_appointments_status') THEN
+          BEGIN ALTER TYPE enum_appointments_status ADD VALUE IF NOT EXISTS 'waiting'; EXCEPTION WHEN duplicate_object THEN NULL; END;
+          BEGIN ALTER TYPE enum_appointments_status ADD VALUE IF NOT EXISTS 'consulting'; EXCEPTION WHEN duplicate_object THEN NULL; END;
+        END IF;
+      END $$;
+    `, 'appointments enum migration');
+
   // Add missing columns to appointments (old schema may have patient_id, appointment_time but not title, doctor_name, doctor_phone)
   await runBatch(appDb, `
       DO $$
@@ -79,6 +90,9 @@ export const ensureHealthTables = async () => {
           END IF;
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_phone') THEN
             ALTER TABLE appointments ADD COLUMN doctor_phone VARCHAR(100);
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'waiting_number') THEN
+            ALTER TABLE appointments ADD COLUMN waiting_number INTEGER;
           END IF;
         END IF;
       END $$;
@@ -123,6 +137,7 @@ export const ensureHealthTables = async () => {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_appointments_patient ON appointments (patient_user_id);
+      CREATE INDEX IF NOT EXISTS idx_appointments_doctor ON appointments (doctor_user_id);
       CREATE INDEX IF NOT EXISTS idx_appointments_datetime ON appointments (datetime);
       DO $$
       BEGIN
@@ -135,6 +150,42 @@ export const ensureHealthTables = async () => {
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'doctor_phone') THEN
           ALTER TABLE appointments ADD COLUMN doctor_phone VARCHAR(100);
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'location') THEN
+          ALTER TABLE appointments ADD COLUMN location VARCHAR(500);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'notes') THEN
+          ALTER TABLE appointments ADD COLUMN notes TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'appointments' AND column_name = 'waiting_number') THEN
+          ALTER TABLE appointments ADD COLUMN waiting_number INTEGER;
+        END IF;
+      END $$;
+
+      -- Relax NOT NULL constraints on HCP-specific columns so patient-side inserts work
+      DO $$ BEGIN
+        ALTER TABLE appointments ALTER COLUMN appointment_id DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN qr_code DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN hcp_id DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN hcp_name DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN clinic_id DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN clinic_name DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN practice_id DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN practice_name DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN patient_name DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN patient_phone DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN doctor_name DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN appointment_date DROP NOT NULL;
+        ALTER TABLE appointments ALTER COLUMN appointment_time DROP NOT NULL;
+      EXCEPTION WHEN undefined_column THEN NULL;
+      END $$;
+
+      -- Drop FK constraints that block patient-side inserts (patient_id may not exist in patients table)
+      DO $$ BEGIN
+        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_clinic_id_fkey;
+        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_hcp_id_fkey;
+        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_practice_id_fkey;
+        ALTER TABLE appointments DROP CONSTRAINT IF EXISTS appointments_patient_id_fkey;
+      EXCEPTION WHEN OTHERS THEN NULL;
       END $$;
 
       -- Appointments Attachments
@@ -206,6 +257,15 @@ export const ensureHealthTables = async () => {
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vital_parameters' AND column_name = 'parameter_name') THEN
           ALTER TABLE vital_parameters ADD COLUMN IF NOT EXISTS parameter_name VARCHAR(255);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vital_parameters' AND column_name = 'source') THEN
+          ALTER TABLE vital_parameters ADD COLUMN source VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vital_parameters' AND column_name = 'normal_range_min') THEN
+          ALTER TABLE vital_parameters ADD COLUMN normal_range_min DECIMAL(12, 4);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'vital_parameters' AND column_name = 'normal_range_max') THEN
+          ALTER TABLE vital_parameters ADD COLUMN normal_range_max DECIMAL(12, 4);
         END IF;
       END $$;
     `, 'medicine/appointments/vitals');

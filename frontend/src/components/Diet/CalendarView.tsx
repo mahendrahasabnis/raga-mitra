@@ -403,7 +403,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
               tabIndex={0}
               onClick={() => handleDayClick(date)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleDayClick(date); } }}
-              className="card p-4 text-left hover:border-blue-400/40 transition cursor-pointer"
+              className="card calendar-day-card p-4 text-left hover:border-blue-400/40 transition cursor-pointer"
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="font-semibold">

@@ -421,7 +421,7 @@ const WeeklyMealPlanBuilder: React.FC<WeeklyMealPlanBuilderProps> = ({
       )}
 
       {itemEditor && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
           <div className="card max-w-lg w-full p-6 space-y-4">
             <h3 className="text-lg font-semibold">Edit Meal Item</h3>
             <div className="grid grid-cols-2 gap-3">

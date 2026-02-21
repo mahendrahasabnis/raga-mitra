@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Calendar } from 'lucide-react';
 
 interface DateRangeSelectorProps {
@@ -55,8 +56,8 @@ const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
 
   const maxDate = new Date().toISOString().split('T')[0];
 
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center p-4">
       <div className="bg-white rounded-lg max-w-md w-full">
         {/* Header */}
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -153,7 +154,8 @@ const DateRangeSelector: React.FC<DateRangeSelectorProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

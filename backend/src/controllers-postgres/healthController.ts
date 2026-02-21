@@ -7,8 +7,7 @@ import { summarizeAppointmentAudioFromBase64, summarizeAppointmentText } from '.
 import {
   extractTestResultData,
   extractTestResultDataFromBase64,
-  ExtractedTestResultData,
-  extractMonitoringDataFromCsvText
+  ExtractedTestResultData
 } from '../services/geminiAIService';
 
 // Fallback in-memory stores
@@ -61,6 +60,15 @@ const getSpeechClient = () => {
 
 const getGcsBucketName = () => process.env.GCS_BUCKET || '';
 
+/** Sanitize filename for Content-Disposition header (avoid "Invalid character in header content"). */
+const safeContentDispositionFilename = (name: string | null | undefined): string => {
+  const raw = (name || 'report').trim();
+  return raw
+    .replace(/[\x00-\x1f\x7f\r\n"\\]/g, '')
+    .replace(/[^\x20-\x7e]/g, '_')
+    .slice(0, 200) || 'report';
+};
+
 const createSignedUploadUrl = async (objectPath: string, contentType: string) => {
   const bucketName = getGcsBucketName();
   if (!bucketName) throw new Error('GCS_BUCKET not configured');
@@ -110,6 +118,24 @@ const uploadBufferToGcs = async (buffer: Buffer, objectPath: string, contentType
     metadata: { cacheControl: 'private, max-age=31536000' },
   });
   return `https://storage.googleapis.com/${bucketName}/${objectPath}`;
+};
+
+const deleteGcsObjectFromFileUrl = async (fileUrl: string): Promise<boolean> => {
+  const bucketName = getGcsBucketName();
+  if (!bucketName) return false;
+  const escaped = bucketName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = fileUrl.match(new RegExp(`^https://storage\\.googleapis\\.com/${escaped}/(.+)$`));
+  if (!match) return false;
+  try {
+    const objectPath = decodeURIComponent(match[1]);
+    const storage = getStorageClient();
+    await storage.bucket(bucketName).file(objectPath).delete();
+    return true;
+  } catch (e: any) {
+    if (e?.code === 404) return true; // already deleted
+    console.warn('⚠️ [HEALTH] Failed to delete GCS object:', e?.message || e);
+    return false;
+  }
 };
 
 export const getSignedUploadUrl = async (req: any, res: Response) => {
@@ -179,16 +205,35 @@ const describeTableSafe = async (table: string) => {
 const resolveAppointmentColumns = (cols: Record<string, any> | null) => {
   const columnNames = cols ? Object.keys(cols) : [];
   const pick = (...names: string[]) => names.find((n) => columnNames.includes(n)) || null;
+
+  const has = (name: string) => columnNames.includes(name);
+  // Detect split date/time schema (HCP module): appointment_date DATE + appointment_time VARCHAR
+  const hasSplitDateTime = has('appointment_date') && has('appointment_time');
+
   return {
     patientCol: pick('patient_user_id', 'patient_id', 'user_id'),
     doctorCol: pick('doctor_user_id', 'doctor_id'),
     doctorNameCol: pick('doctor_name'),
     doctorPhoneCol: pick('doctor_phone'),
-    datetimeCol: pick('datetime', 'scheduled_at', 'start_time', 'appointment_time'),
+    datetimeCol: hasSplitDateTime ? null : pick('datetime', 'scheduled_at', 'start_time', 'appointment_time'),
+    hasSplitDateTime,
+    appointmentDateCol: hasSplitDateTime ? 'appointment_date' : null,
+    appointmentTimeCol: hasSplitDateTime ? 'appointment_time' : null,
     statusCol: pick('status'),
-    titleCol: pick('title', 'purpose'),
+    titleCol: pick('title', 'purpose', 'chief_complaint'),
     notesCol: pick('notes', 'description'),
-    locationCol: pick('location', 'clinic', 'place'),
+    locationCol: pick('location', 'clinic_name', 'clinic', 'place'),
+    patientNameCol: pick('patient_name'),
+    patientPhoneCol: pick('patient_phone'),
+    // HCP schema NOT NULL columns we must fill with placeholders when present
+    appointmentIdCol: pick('appointment_id'),
+    qrCodeCol: pick('qr_code'),
+    hcpIdCol: pick('hcp_id'),
+    hcpNameCol: pick('hcp_name'),
+    clinicIdCol: pick('clinic_id'),
+    clinicNameCol: pick('clinic_name'),
+    practiceIdCol: pick('practice_id'),
+    practiceNameCol: pick('practice_name'),
   };
 };
 
@@ -408,7 +453,8 @@ export const getAppointments = async (req: any, res: Response) => {
     await ensureHealthTablesReady();
     const sequelize = await getAppSequelize();
     const cols = await describeTableSafe('appointments');
-    const { patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol } = resolveAppointmentColumns(cols);
+    const resolved = resolveAppointmentColumns(cols);
+    const { patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol, hasSplitDateTime, appointmentDateCol, appointmentTimeCol } = resolved;
 
     if (!cols || !patientCol) {
       if (STRICT_DB) return dbUnavailable(res, new Error('appointments schema missing/unknown'), 'Appointments table/schema not available (STRICT_DB=true).');
@@ -416,15 +462,14 @@ export const getAppointments = async (req: any, res: Response) => {
       return res.json({ appointments: items });
     }
 
-    // Only select columns that exist (old schema may lack title, doctor_name, doctor_phone)
-    const selectColumns = ['id', patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol]
+    const selectCols = ['id', patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol, appointmentDateCol, appointmentTimeCol]
       .filter(Boolean)
       .map((c) => `"${c}"`)
       .join(', ');
 
-    // Doctor name/phone stored on appointment; no users table lookup
+    const orderExpr = datetimeCol ? `"${datetimeCol}"` : hasSplitDateTime ? `"${appointmentDateCol}" DESC, "${appointmentTimeCol}"` : '"created_at"';
     const raw: any = await sequelize.query(
-      `SELECT ${selectColumns} FROM appointments WHERE "${patientCol}" = :userId ORDER BY ${datetimeCol ? `"${datetimeCol}"` : '"created_at"'} DESC`,
+      `SELECT ${selectCols} FROM appointments WHERE "${patientCol}" = :userId ORDER BY ${orderExpr} DESC`,
       { replacements: { userId: targetUserId }, type: QueryTypes.SELECT }
     );
     const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.[0]) ? raw[0] : [];
@@ -442,7 +487,12 @@ export const getAppointments = async (req: any, res: Response) => {
         row.attachments = [];
         row.attachment_count = 0;
       }
-      if (datetimeCol && !row.datetime) {
+      // Synthesize a datetime field from split columns when needed
+      if (hasSplitDateTime && !row.datetime) {
+        const d = row[appointmentDateCol!];
+        const t = row[appointmentTimeCol!];
+        if (d) row.datetime = t ? `${String(d).slice(0, 10)}T${t}` : String(d).slice(0, 10);
+      } else if (datetimeCol && !row.datetime) {
         row.datetime = row[datetimeCol];
       }
     }
@@ -453,6 +503,126 @@ export const getAppointments = async (req: any, res: Response) => {
     if (STRICT_DB) return dbUnavailable(res, err, 'Failed to fetch appointments (STRICT_DB=true).');
     const items = inMemoryAppointments.filter((a) => a.patient_user_id === targetUserId);
     return res.json({ appointments: items, warning: 'DB unavailable, using in-memory data' });
+  }
+};
+
+export const getMyPatientAppointments = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const dateStr = req.query.date as string | undefined; // YYYY-MM-DD
+  const forUserId = req.query.forUserId as string | undefined;
+
+  try {
+    let doctorId = userId;
+    if (forUserId) {
+      await ensureHealthTablesReady();
+      const seq = await getAppSequelize();
+      const authRows: any = await seq.query(
+        `SELECT id FROM patient_resources WHERE patient_user_id = :forUserId AND resource_user_id = :userId LIMIT 1`,
+        { replacements: { forUserId, userId }, type: QueryTypes.SELECT }
+      );
+      if (!authRows || authRows.length === 0) {
+        return res.status(403).json({ message: 'Not authorized to view this professional\'s appointments' });
+      }
+      doctorId = forUserId;
+    }
+
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const cols = await describeTableSafe('appointments');
+    const resolved = resolveAppointmentColumns(cols);
+    const { patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol, hasSplitDateTime, appointmentDateCol, appointmentTimeCol, patientNameCol, patientPhoneCol } = resolved;
+
+    if (!cols || !doctorCol) {
+      return res.json({ appointments: [] });
+    }
+
+    const selectCols = ['id', patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, titleCol, statusCol, locationCol, notesCol, appointmentDateCol, appointmentTimeCol, patientNameCol, patientPhoneCol, 'waiting_number']
+      .filter(Boolean)
+      .map((c) => `"${c}"`)
+      .join(', ');
+
+    let whereClause = `"${doctorCol}" = :doctorId`;
+    const replacements: Record<string, string> = { doctorId };
+
+    if (dateStr) {
+      if (hasSplitDateTime && appointmentDateCol) {
+        whereClause += ` AND "${appointmentDateCol}" = :dateFilter`;
+      } else if (datetimeCol) {
+        whereClause += ` AND "${datetimeCol}"::date = :dateFilter`;
+      }
+      replacements.dateFilter = dateStr;
+    }
+
+    const orderExpr = datetimeCol ? `"${datetimeCol}"` : hasSplitDateTime ? `"${appointmentDateCol}", "${appointmentTimeCol}"` : '"created_at"';
+    const raw: any = await sequelize.query(
+      `SELECT ${selectCols} FROM appointments WHERE ${whereClause} ORDER BY ${orderExpr} ASC`,
+      { replacements, type: QueryTypes.SELECT }
+    );
+    const rows = Array.isArray(raw) ? raw : Array.isArray(raw?.[0]) ? raw[0] : [];
+
+    // Enrich with patient info from shared users table (fallback if not on row already)
+    const patientIds = rows.map((r: any) => r[patientCol!]).filter(Boolean);
+    let patientMap: Record<string, { name: string; phone: string | null }> = {};
+    if (patientIds.length > 0) {
+      try {
+        const sharedDb = await getSharedSequelize();
+        const unique = Array.from(new Set(patientIds.map(String)));
+        const placeholders = unique.map((_, i) => `:pid${i}`).join(', ');
+        const reps: Record<string, string> = {};
+        unique.forEach((id, i) => { reps[`pid${i}`] = id; });
+        let pRows: any[];
+        try {
+          pRows = await sharedDb.query(
+            `SELECT id, name, phone FROM users WHERE id IN (${placeholders})`,
+            { replacements: reps, type: QueryTypes.SELECT }
+          ) as any[];
+          if (Array.isArray(pRows[0])) pRows = pRows[0];
+        } catch (colErr: any) {
+          if (/column "phone" does not exist/i.test(colErr?.message || '')) {
+            const r2: any = await sharedDb.query(
+              `SELECT id, name FROM users WHERE id IN (${placeholders})`,
+              { replacements: reps, type: QueryTypes.SELECT }
+            );
+            pRows = (Array.isArray(r2[0]) ? r2[0] : r2).map((row: any) => ({ ...row, phone: null }));
+          } else { throw colErr; }
+        }
+        (pRows || []).forEach((row: any) => {
+          if (row?.id) patientMap[row.id] = { name: row.name || '', phone: row.phone ?? null };
+        });
+      } catch (e) {
+        console.error('⚠️ [HEALTH] patient name lookup error:', (e as any)?.message || e);
+      }
+    }
+
+    for (const row of rows) {
+      // Synthesize datetime from split columns
+      if (hasSplitDateTime && !row.datetime) {
+        const d = row[appointmentDateCol!];
+        const t = row[appointmentTimeCol!];
+        if (d) row.datetime = t ? `${String(d).slice(0, 10)}T${t}` : String(d).slice(0, 10);
+      } else if (datetimeCol && !row.datetime) {
+        row.datetime = row[datetimeCol];
+      }
+      const pid = row[patientCol!];
+      // Use row-level patient_name if available (HCP schema), else lookup
+      row.patient_name = row[patientNameCol || ''] || patientMap[pid]?.name || null;
+      row.patient_phone = row[patientPhoneCol || ''] || patientMap[pid]?.phone || null;
+      try {
+        const attRaw: any = await sequelize.query(
+          `SELECT id, attachment_type, file_name FROM appointment_attachments WHERE appointment_id = :appointmentId`,
+          { replacements: { appointmentId: row.id }, type: QueryTypes.SELECT }
+        );
+        const attachments = Array.isArray(attRaw) ? attRaw : Array.isArray(attRaw?.[0]) ? attRaw[0] : [];
+        row.attachment_count = attachments.length;
+      } catch { row.attachment_count = 0; }
+    }
+
+    return res.json({ appointments: rows || [] });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] getMyPatientAppointments error:', err.message || err);
+    return res.json({ appointments: [] });
   }
 };
 
@@ -756,7 +926,8 @@ export const createAppointment = async (req: any, res: Response) => {
     await ensureHealthTablesReady();
     const sequelize = await getAppSequelize();
     const cols = await describeTableSafe('appointments');
-    const { patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, statusCol, titleCol, notesCol, locationCol } = resolveAppointmentColumns(cols);
+    const resolved = resolveAppointmentColumns(cols);
+    const { patientCol, doctorCol, doctorNameCol, doctorPhoneCol, datetimeCol, statusCol, titleCol, notesCol, locationCol, hasSplitDateTime, appointmentDateCol, appointmentTimeCol, patientNameCol, patientPhoneCol, appointmentIdCol, qrCodeCol, hcpIdCol, hcpNameCol, clinicIdCol, clinicNameCol, practiceIdCol, practiceNameCol } = resolved;
 
     if (!cols || !patientCol) {
       if (STRICT_DB) return dbUnavailable(res, new Error('appointments schema missing/unknown'), 'Cannot create appointment (STRICT_DB=true).');
@@ -780,9 +951,11 @@ export const createAppointment = async (req: any, res: Response) => {
     const insertCols: string[] = [];
     const values: string[] = [];
     const params: Record<string, any> = {};
+    const usedCols = new Set<string>();
 
     const pushCol = (colName: string | null, paramName: string, value: any) => {
-      if (!colName) return;
+      if (!colName || usedCols.has(colName)) return;
+      usedCols.add(colName);
       insertCols.push(`"${colName}"`);
       values.push(`:${paramName}`);
       params[paramName] = value;
@@ -790,15 +963,54 @@ export const createAppointment = async (req: any, res: Response) => {
 
     const appointmentId = uuidv4();
     pushCol('id', 'id', appointmentId);
+
+    // Core fields first (user-provided data wins over placeholders via dedup)
     pushCol(patientCol, 'patient', targetUserId);
     pushCol(doctorCol, 'doctor', doctor_user_id);
     pushCol(doctorNameCol, 'doctorName', doctor_name || null);
     pushCol(doctorPhoneCol, 'doctorPhone', doctor_phone || null);
-    pushCol(titleCol || 'title', 'title', title);
-    pushCol(datetimeCol || 'datetime', 'datetime', datetime);
-    pushCol(locationCol || 'location', 'location', location);
-    pushCol(notesCol || 'notes', 'notes', notes);
-    pushCol(statusCol || 'status', 'status', status);
+    pushCol(titleCol, 'title', title);
+
+    if (hasSplitDateTime && datetime) {
+      const dtStr = String(datetime);
+      const dateOnly = dtStr.includes('T') ? dtStr.split('T')[0] : dtStr.slice(0, 10);
+      const timeOnly = dtStr.includes('T') ? dtStr.split('T')[1]?.slice(0, 5) : '';
+      pushCol(appointmentDateCol, 'appointmentDate', dateOnly);
+      pushCol(appointmentTimeCol, 'appointmentTime', timeOnly || null);
+    } else {
+      pushCol(datetimeCol, 'datetime', datetime);
+    }
+
+    pushCol(locationCol, 'location', location);
+    pushCol(notesCol, 'notes', notes);
+    const statusMap: Record<string, string> = { planned: 'requested' };
+    const mappedStatus = statusMap[status?.toLowerCase()] || status;
+    pushCol(statusCol, 'status', mappedStatus);
+
+    // HCP schema: fill remaining text columns with placeholders (skipped if already set).
+    // Skip FK columns (hcp_id, clinic_id, practice_id) — they reference other tables.
+    if (appointmentIdCol) pushCol(appointmentIdCol, 'appointmentIdStr', appointmentId.slice(0, 50));
+    if (qrCodeCol) pushCol(qrCodeCol, 'qrCodeStr', appointmentId.slice(0, 100));
+    if (hcpNameCol) pushCol(hcpNameCol, 'hcpName', doctor_name || '');
+    if (clinicNameCol) pushCol(clinicNameCol, 'clinicName', location || doctor_name || '');
+    if (practiceNameCol) pushCol(practiceNameCol, 'practiceName', location || doctor_name || '');
+
+    // HCP schema extra columns: populate patient_name/phone if columns exist
+    if (patientNameCol) {
+      try {
+        const sharedDb = await getSharedSequelize();
+        const [pRows]: any = await sharedDb.query(
+          `SELECT name, phone FROM users WHERE id = :pid LIMIT 1`,
+          { replacements: { pid: targetUserId }, type: QueryTypes.SELECT }
+        );
+        const pUser = Array.isArray(pRows) ? pRows[0] : pRows;
+        pushCol(patientNameCol, 'patientName', pUser?.name || '');
+        if (patientPhoneCol) pushCol(patientPhoneCol, 'patientPhone', pUser?.phone || '');
+      } catch {
+        pushCol(patientNameCol, 'patientName', '');
+        if (patientPhoneCol) pushCol(patientPhoneCol, 'patientPhone', '');
+      }
+    }
 
     const sql = `INSERT INTO appointments (${insertCols.join(', ')}) VALUES (${values.join(', ')}) RETURNING *`;
     const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.INSERT });
@@ -1330,7 +1542,13 @@ export const uploadReport = async (req: any, res: Response) => {
   }
 
   const reportId = uuidv4();
-  const fileName = file_name || 'report.pdf';
+  const now = new Date();
+  const rawName = (file_name || '').trim().toLowerCase();
+  const genericNames = ['report.pdf', 'report', 'diagnostic report', 'scanned-documents.pdf', 'diagnostic test report'];
+  const isGeneric = !rawName || genericNames.includes(rawName) || genericNames.includes(rawName.replace(/\.pdf$/, ''));
+  const fileName = isGeneric
+    ? `Diagnostic Report — ${now.toLocaleDateString('en', { day: 'numeric', month: 'short', year: 'numeric' })} ${now.toLocaleTimeString('en', { hour12: true, hour: '2-digit', minute: '2-digit' })}`
+    : (file_name || 'report.pdf');
   const fileType = file_type || 'application/pdf';
   let finalFileUrl: string | null = file_url || null;
   let finalFileBase64: string | null = file_base64 || null;
@@ -1384,11 +1602,12 @@ export const listReports = async (req: any, res: Response) => {
   try {
     await ensureHealthReportsTable();
     const sequelize = await getAppSequelize();
-    const [rows]: any = await sequelize.query(
+    const rows: any = await sequelize.query(
       `SELECT id, file_name, file_url, uploaded_at, status FROM health_reports WHERE owner_user_id = :targetUserId ORDER BY uploaded_at DESC`,
       { replacements: { targetUserId }, type: QueryTypes.SELECT }
     );
-    return res.json({ reports: rows || [] });
+    const list = Array.isArray(rows) ? rows : [];
+    return res.json({ reports: list });
   } catch (err: any) {
     console.error('❌ [HEALTH] listReports error:', err.message || err);
     if (STRICT_DB) return dbUnavailable(res, err, 'Failed to list reports (STRICT_DB=true).');
@@ -1438,39 +1657,90 @@ export const getReportFile = async (req: any, res: Response) => {
       if (STRICT_DB) return res.status(404).json({ message: 'Report not found' });
       const mem = inMemoryReports.find((r: any) => r.id === reportId && r.owner_user_id === targetUserId);
       if (!mem) return res.status(404).json({ message: 'Report not found' });
-      if (mem.file_url) return res.redirect(mem.file_url);
+      if (mem.file_url) {
+        const nodeFetch = (await import('node-fetch')).default;
+        const resp = await nodeFetch(mem.file_url);
+        if (!resp.ok) throw new Error(`Failed to fetch file: ${resp.status}`);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        res.setHeader('Content-Type', mem.file_type || 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${safeContentDispositionFilename(mem.file_name)}"`);
+        return res.send(buf);
+      }
       if (mem.file_base64) {
         const buf = Buffer.from(mem.file_base64, 'base64');
         res.setHeader('Content-Type', mem.file_type || 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${(mem.file_name || 'report').replace(/"/g, '%22')}"`);
+        res.setHeader('Content-Disposition', `inline; filename="${safeContentDispositionFilename(mem.file_name)}"`);
         return res.send(buf);
       }
       return res.status(404).json({ message: 'Report file not available' });
     }
     if (report.file_url) {
-      // If file is in GCS, use signed URL so private buckets work.
       const gcsMatch = report.file_url.match(/^https:\/\/storage\.googleapis\.com\/([^/]+)\/(.+)$/);
-      if (gcsMatch && getGcsBucketName()) {
+      if (gcsMatch) {
         try {
-          const [, , objectPath] = gcsMatch;
-          const signedUrl = await getSignedReadUrl(decodeURIComponent(objectPath));
-          return res.redirect(signedUrl);
-        } catch (e) {
-          // Fall through to redirect to raw URL (e.g. if bucket is public).
+          const [, bucketName, objectPath] = gcsMatch;
+          const storage = getStorageClient();
+          const [buf] = await storage.bucket(bucketName).file(decodeURIComponent(objectPath)).download();
+          res.setHeader('Content-Type', report.file_type || 'application/pdf');
+          res.setHeader('Content-Disposition', `inline; filename="${safeContentDispositionFilename(report.file_name)}"`);
+          return res.send(buf);
+        } catch (gcsErr: any) {
+          console.warn('⚠️ [HEALTH] getReportFile GCS download failed, trying fetch:', gcsErr?.message || gcsErr);
         }
       }
-      return res.redirect(report.file_url);
+      const nodeFetch = (await import('node-fetch')).default;
+      const resp = await nodeFetch(report.file_url);
+      if (!resp.ok) throw new Error(`Failed to fetch file: ${resp.status} ${resp.statusText}`);
+      const buf = Buffer.from(await resp.arrayBuffer());
+      res.setHeader('Content-Type', report.file_type || 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${safeContentDispositionFilename(report.file_name)}"`);
+      return res.send(buf);
     }
     if (report.file_base64) {
       const buf = Buffer.from(report.file_base64, 'base64');
       res.setHeader('Content-Type', report.file_type || 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${(report.file_name || 'report').replace(/"/g, '%22')}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${safeContentDispositionFilename(report.file_name)}"`);
       return res.send(buf);
     }
     return res.status(404).json({ message: 'Report file not available' });
   } catch (err: any) {
     console.error('❌ [HEALTH] getReportFile error:', err.message || err);
     return res.status(500).json({ message: err.message || 'Internal server error' });
+  }
+};
+
+export const deleteReport = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.query.client_id || req.body?.client_id;
+  const targetUserId = clientId || userId;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const { reportId } = req.params;
+  if (!reportId) return res.status(400).json({ message: 'Report ID is required' });
+
+  try {
+    await ensureHealthReportsTable();
+    const report = await readHealthReport(reportId, targetUserId);
+    if (!report) {
+      const memIdx = inMemoryReports.findIndex((r: any) => r.id === reportId && r.owner_user_id === targetUserId);
+      if (memIdx >= 0) {
+        inMemoryReports.splice(memIdx, 1);
+        return res.json({ deleted: true, message: 'Report deleted' });
+      }
+      return res.status(404).json({ message: 'Report not found' });
+    }
+    if (report.file_url && typeof report.file_url === 'string') {
+      await deleteGcsObjectFromFileUrl(report.file_url);
+    }
+    const sequelize = await getAppSequelize();
+    await sequelize.query(`DELETE FROM health_reports WHERE id = :reportId AND owner_user_id = :targetUserId`, {
+      replacements: { reportId, targetUserId },
+      type: QueryTypes.DELETE,
+    });
+    return res.json({ deleted: true, message: 'Report deleted' });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] deleteReport error:', err.message || err);
+    return res.status(500).json({ message: err.message || 'Failed to delete report' });
   }
 };
 
@@ -1535,7 +1805,7 @@ export const extractReport = async (req: any, res: Response) => {
           reference_range: referenceRange || undefined,
           measured_at: extractedData.test_date || new Date().toISOString(),
           source_report_id: report.id,
-          source: 'report',
+          source: 'Report scan',
           confidence: extractedData.confidence || null,
         };
       })
@@ -1572,14 +1842,24 @@ export const confirmVitals = async (req: any, res: Response) => {
   if (!userId) return res.status(401).json({ message: 'Unauthorized' });
   const vitals = Array.isArray(req.body?.vitals) ? req.body.vitals : [];
   const created: any[] = [];
+  let skipped = 0;
+  const collector: any = {
+    status: () => collector,
+    json: (data: any) => {
+      created.push(data.vital || data);
+      if (data.skipped) skipped++;
+    },
+  };
   for (const v of vitals) {
     const nextVital = {
       ...v,
-      source: v.source || (v.source_report_id ? 'report' : v.source),
+      source: v.source || (v.source_report_id ? 'Report scan' : 'Manually entered'),
     };
     const fakeReq: any = { user: { id: userId }, body: nextVital };
-    const collector: any = { json: (data: any) => created.push(data.vital || data) };
     await addVital(fakeReq, collector as any);
+  }
+  if (skipped > 0) {
+    return res.json({ vitals: created, skipped, duplicate: true, message: 'Duplicate found hence existing.' });
   }
   return res.json({ vitals: created });
 };
@@ -1649,6 +1929,7 @@ export const getVitals = async (req: any, res: Response) => {
       parameter: r.parameter ?? r.parameter_name ?? r.name ?? '',
       recorded_date: r.recorded_date ?? r.measured_at ?? r.recorded_at,
       measured_at: r.measured_at ?? r.recorded_date ?? r.recorded_at,
+      source: r.source ?? (r.source_report_id ? 'Report scan' : 'Manually entered'),
     }));
     // Sort by date descending
     list.sort((a, b) => {
@@ -1710,11 +1991,12 @@ export const getVitalsGraph = async (req: any, res: Response) => {
 
     sql += ` ORDER BY "${measuredAtCol || 'recorded_date'}" ASC`;
 
-    const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const rows: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.SELECT });
+    const list = Array.isArray(rows) ? rows : [];
 
-    const unit = rows.length > 0 ? rows[0].unit : null;
+    const unit = list.length > 0 ? list[0].unit : null;
 
-    return res.json({ data: rows || [], unit });
+    return res.json({ data: list, unit });
   } catch (err: any) {
     console.error('❌ [HEALTH] getVitalsGraph error:', err.message || err);
     return res.json({ data: [], unit: null });
@@ -1739,7 +2021,7 @@ export const getVitalsTrends = async (req: any, res: Response) => {
       return res.json({ trend: 'neutral', change: null, percentage: null });
     }
 
-    const [rows]: any = await sequelize.query(
+    const rows: any = await sequelize.query(
       `SELECT "${valueCol}" as value, "${measuredAtCol || 'recorded_date'}" as date
        FROM vital_parameters
        WHERE "${patientCol}" = :userId AND "${parameterCol}" = :parameter
@@ -1747,13 +2029,14 @@ export const getVitalsTrends = async (req: any, res: Response) => {
        LIMIT 2`,
       { replacements: { userId: targetUserId, parameter }, type: QueryTypes.SELECT }
     );
+    const list = Array.isArray(rows) ? rows : [];
 
-    if (rows.length < 2) {
+    if (list.length < 2) {
       return res.json({ trend: 'neutral', change: null, percentage: null });
     }
 
-    const latest = parseFloat(rows[0].value);
-    const previous = parseFloat(rows[1].value);
+    const latest = parseFloat(list[0].value);
+    const previous = parseFloat(list[1].value);
     const change = latest - previous;
     const percentage = previous !== 0 ? ((change / previous) * 100).toFixed(2) : null;
     const trend = change > 0 ? 'up' : change < 0 ? 'down' : 'neutral';
@@ -1775,7 +2058,8 @@ export const addVital = async (req: any, res: Response) => {
     console.log('❌ [HEALTH] addVital: no userId (unauthorized)');
     return res.status(401).json({ message: 'Unauthorized' });
   }
-  const { parameter, value, unit, measured_at, reference_range, source_report_id, source } = req.body || {};
+  const { parameter, value, unit, measured_at, reference_range, normal_range_min, normal_range_max, source_report_id, source } = req.body || {};
+  const sourceValue = source || (source_report_id ? 'Report scan' : 'Manually entered');
 
   if (!parameter || value === undefined) {
     console.log('❌ [HEALTH] addVital: missing parameter or value', { parameter, value });
@@ -1800,13 +2084,24 @@ export const addVital = async (req: any, res: Response) => {
         recorded_date TIMESTAMPTZ DEFAULT NOW(),
         reference_range VARCHAR(255),
         source_report_id UUID,
+        source VARCHAR(100),
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
 
     const cols = await describeTableSafe('vital_parameters');
-    const { patientCol, parameterCol, valueCol, unitCol, measuredAtCol, referenceRangeCol, normalRangeMinCol, normalRangeMaxCol, sourceReportCol, recordedByCol } = resolveVitalColumns(cols);
+    const { patientCol, parameterCol, valueCol, unitCol, measuredAtCol, referenceRangeCol, normalRangeMinCol, normalRangeMaxCol, sourceReportCol, recordedByCol, sourceCol } = resolveVitalColumns(cols);
+
+    const [dupRows]: any = await sequelize.query(
+      `SELECT id FROM vital_parameters WHERE "${patientCol}" = :uid AND "${parameterCol}" = :param AND "${measuredAtCol || 'recorded_date'}" = :recorded LIMIT 1`,
+      { replacements: { uid: targetUserId, param: parameter, recorded: recordedDate }, type: QueryTypes.SELECT }
+    );
+    const existing = Array.isArray(dupRows) ? dupRows[0] : dupRows;
+    if (existing) {
+      return res.status(200).json({ vital: { id: existing.id, parameter_name: parameter, parameter, value: numValue, unit, recorded_date: recordedDate, measured_at: recordedDate }, skipped: true, message: 'Duplicate (DateTime + parameter) - not saved' });
+    }
+
     if (!patientCol || !parameterCol || !valueCol) {
       if (STRICT_DB) return dbUnavailable(res, new Error('vital_parameters schema missing/unknown'), 'Cannot insert vitals (STRICT_DB=true).');
       const payload = {
@@ -1842,13 +2137,25 @@ export const addVital = async (req: any, res: Response) => {
     if (referenceRangeCol && reference_range != null && reference_range !== '') {
       insertCols.push(referenceRangeCol);
       replacements[referenceRangeCol] = reference_range;
-    } else if ((normalRangeMinCol || normalRangeMaxCol) && reference_range != null && reference_range !== '') {
+    }
+    const nrMin = normal_range_min != null ? parseFloat(String(normal_range_min)) : null;
+    const nrMax = normal_range_max != null ? parseFloat(String(normal_range_max)) : null;
+    if (normalRangeMinCol && nrMin != null && !Number.isNaN(nrMin)) {
+      insertCols.push(normalRangeMinCol);
+      replacements[normalRangeMinCol] = nrMin;
+    } else if (normalRangeMinCol && reference_range != null && reference_range !== '') {
       const parsed = parseReferenceRange(reference_range);
-      if (normalRangeMinCol && parsed.min != null) {
+      if (parsed.min != null) {
         insertCols.push(normalRangeMinCol);
         replacements[normalRangeMinCol] = parsed.min;
       }
-      if (normalRangeMaxCol && parsed.max != null) {
+    }
+    if (normalRangeMaxCol && nrMax != null && !Number.isNaN(nrMax)) {
+      insertCols.push(normalRangeMaxCol);
+      replacements[normalRangeMaxCol] = nrMax;
+    } else if (normalRangeMaxCol && reference_range != null && reference_range !== '') {
+      const parsed = parseReferenceRange(reference_range);
+      if (parsed.max != null) {
         insertCols.push(normalRangeMaxCol);
         replacements[normalRangeMaxCol] = parsed.max;
       }
@@ -1856,6 +2163,10 @@ export const addVital = async (req: any, res: Response) => {
     if (sourceReportCol) {
       insertCols.push(sourceReportCol);
       replacements[sourceReportCol] = source_report_id || null;
+    }
+    if (sourceCol) {
+      insertCols.push(sourceCol);
+      replacements[sourceCol] = sourceValue;
     }
     if (recordedByCol) {
       insertCols.push(recordedByCol);
@@ -1909,6 +2220,120 @@ export const addVital = async (req: any, res: Response) => {
       error_detail: errMsg,
       error_code: errCode,
     });
+  }
+};
+
+export const updateVital = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body?.client_id || req.query.client_id;
+  const targetUserId = clientId || userId;
+  const { id } = req.params;
+  const { normal_range_min, normal_range_max } = req.body || {};
+
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+  if (!id) return res.status(400).json({ message: 'Vital ID is required' });
+
+  try {
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const cols = await describeTableSafe('vital_parameters');
+    const { patientCol, normalRangeMinCol, normalRangeMaxCol, referenceRangeCol } = resolveVitalColumns(cols);
+    if (!patientCol) return res.status(503).json({ message: 'Vitals table not available' });
+
+    const updates: string[] = [];
+    const replacements: Record<string, any> = { id, uid: targetUserId };
+
+    if (normalRangeMinCol) {
+      const nrMin = normal_range_min != null ? parseFloat(String(normal_range_min)) : null;
+      if (nrMin != null && !Number.isNaN(nrMin)) {
+        updates.push(`"${normalRangeMinCol}" = :nrMin`);
+        replacements.nrMin = nrMin;
+      } else if (normal_range_min === null || normal_range_min === '') {
+        updates.push(`"${normalRangeMinCol}" = NULL`);
+      }
+    }
+    if (normalRangeMaxCol) {
+      const nrMax = normal_range_max != null ? parseFloat(String(normal_range_max)) : null;
+      if (nrMax != null && !Number.isNaN(nrMax)) {
+        updates.push(`"${normalRangeMaxCol}" = :nrMax`);
+        replacements.nrMax = nrMax;
+      } else if (normal_range_max === null || normal_range_max === '') {
+        updates.push(`"${normalRangeMaxCol}" = NULL`);
+      }
+    }
+    if (referenceRangeCol) {
+      const lo = normal_range_min != null && normal_range_min !== '' && !Number.isNaN(parseFloat(String(normal_range_min))) ? parseFloat(String(normal_range_min)) : null;
+      const hi = normal_range_max != null && normal_range_max !== '' && !Number.isNaN(parseFloat(String(normal_range_max))) ? parseFloat(String(normal_range_max)) : null;
+      const refRange = lo != null || hi != null ? `${lo ?? ''}-${hi ?? ''}`.replace(/^-+|-+$/g, '').trim() || null : null;
+      updates.push(`"${referenceRangeCol}" = :refRange`);
+      replacements.refRange = refRange;
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'Provide normal_range_min and/or normal_range_max to update' });
+    }
+
+    const setClause = updates.join(', ');
+    const [rows]: any = await sequelize.query(
+      `UPDATE vital_parameters SET ${setClause} WHERE id = :id AND "${patientCol}" = :uid RETURNING *`,
+      { replacements, type: QueryTypes.UPDATE }
+    );
+    const updated = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    if (!updated) return res.status(404).json({ message: 'Vital not found' });
+    return res.json({ vital: updated });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] updateVital error:', err.message || err);
+    return res.status(500).json({ message: 'Update failed: ' + (err?.message || 'Unknown error') });
+  }
+};
+
+export const deleteVitals = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body?.client_id || req.query.client_id;
+  const targetUserId = clientId || userId;
+  const { ids, deleteAll } = req.body || {};
+  const singleId = req.params?.id;
+
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const cols = await describeTableSafe('vital_parameters');
+    const { patientCol } = resolveVitalColumns(cols);
+    if (!patientCol) return res.status(503).json({ message: 'Vitals table not available' });
+
+    let deleted = 0;
+
+    if (singleId) {
+      const [rows]: any = await sequelize.query(
+        `DELETE FROM vital_parameters WHERE id = :id AND "${patientCol}" = :uid RETURNING id`,
+        { replacements: { id: singleId, uid: targetUserId } }
+      );
+      deleted = Array.isArray(rows) ? rows.length : 0;
+    } else if (Array.isArray(ids) && ids.length > 0) {
+      const placeholders = ids.map((_: string, i: number) => `:id${i}`).join(',');
+      const replacements: Record<string, any> = { uid: targetUserId };
+      ids.forEach((id: string, i: number) => { replacements[`id${i}`] = id; });
+      const [rows]: any = await sequelize.query(
+        `DELETE FROM vital_parameters WHERE "${patientCol}" = :uid AND id IN (${placeholders}) RETURNING id`,
+        { replacements }
+      );
+      deleted = Array.isArray(rows) ? rows.length : 0;
+    } else if (deleteAll === true) {
+      const [rows]: any = await sequelize.query(
+        `DELETE FROM vital_parameters WHERE "${patientCol}" = :uid RETURNING id`,
+        { replacements: { uid: targetUserId } }
+      );
+      deleted = Array.isArray(rows) ? rows.length : 0;
+    } else {
+      return res.status(400).json({ message: 'Provide id, ids array, or deleteAll: true' });
+    }
+
+    return res.json({ deleted });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] deleteVitals error:', err.message || err);
+    return res.status(500).json({ message: 'Delete failed: ' + (err?.message || 'Unknown error') });
   }
 };
 
@@ -2262,32 +2687,6 @@ const parseMonitoringFileBuffer = async (buffer: Buffer, filename?: string): Pro
   return parseMonitoringExcelBuffer(buffer);
 };
 
-/** Convert file buffer to plain text for Gemini (CSV or Excel converted to CSV-like text). */
-const fileBufferToTextForGemini = async (buffer: Buffer, filename?: string): Promise<string> => {
-  const lower = (filename || '').toLowerCase();
-  if (lower.endsWith('.csv')) {
-    return buffer.toString('utf-8');
-  }
-  const ExcelJS = (await import('exceljs')).default;
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const worksheet = workbook.worksheets[0];
-  if (!worksheet) return '';
-  const rows: (string | undefined)[][] = [];
-  let maxCol = 0;
-  worksheet.eachRow((row) => {
-    const cells: (string | undefined)[] = [];
-    row.eachCell((cell, colNumber) => {
-      const val = cell.value;
-      const s = val != null ? String(val).trim() : '';
-      cells[colNumber - 1] = s.includes(',') || s.includes('\t') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
-      maxCol = Math.max(maxCol, colNumber);
-    });
-    rows.push(cells);
-  });
-  return rows.map((cells) => Array.from({ length: maxCol }, (_, i) => cells[i] ?? '').join(',')).join('\n');
-};
-
 /** Filter out null/empty readings - skip records with no useful data. */
 const filterNullReadings = (readings: any[]): any[] =>
   readings.filter((r) => {
@@ -2296,37 +2695,6 @@ const filterNullReadings = (readings: any[]): any[] =>
     const hasMov = r.movement != null;
     return hasRec || hasNum || hasMov;
   });
-
-/** Extract monitoring readings using Gemini LLM; fallback to rule-based parser if Gemini fails. */
-const extractMonitoringReadingsWithGemini = async (buffer: Buffer, filename?: string): Promise<any[]> => {
-  try {
-    const text = await fileBufferToTextForGemini(buffer, filename);
-    if (!text || text.trim().length < 10) {
-      throw new Error('File content too short or empty');
-    }
-    const { readings } = await extractMonitoringDataFromCsvText(text);
-    if (!Array.isArray(readings) || readings.length === 0) {
-      throw new Error('Gemini returned no readings');
-    }
-    const toNum = (v: any) => (v == null || v === '') ? null : (typeof v === 'number' ? v : Number.isNaN(parseFloat(String(v))) ? null : parseFloat(String(v)));
-
-    const mapped = readings.map((r: any) => ({
-      recorded_at: r.recorded_at || new Date().toISOString(),
-      heart_rate: toNum(r.heart_rate),
-      breath_rate: toNum(r.breath_rate),
-      spo2: toNum(r.spo2),
-      temperature: toNum(r.temperature),
-      systolic_bp: toNum(r.systolic_bp),
-      diastolic_bp: toNum(r.diastolic_bp),
-      movement: r.movement != null ? (r.movement === 1 || r.movement === '1' ? 1 : 0) : null,
-    }));
-    return filterNullReadings(mapped);
-  } catch (geminiErr: any) {
-    console.warn('⚠️ [HEALTH] Gemini extraction failed, using rule-based parser:', geminiErr?.message || geminiErr);
-    const rawRows = await parseMonitoringFileBuffer(buffer, filename);
-    return filterNullReadings(rawRowsToReadings(rawRows));
-  }
-};
 
 const excelSerialToDate = (serial: number): Date => {
   const days = Math.floor(serial) - 25569;
@@ -2399,7 +2767,7 @@ const fileHasTemplateFormat = async (buffer: Buffer, filename?: string): Promise
   return matchCount >= 5; // at least 5 template columns present
 };
 
-/** Parse file once; returns { useTemplate, readings } to avoid double parsing. */
+/** Parse file once using rule-based parser only (no Gemini). Returns { useTemplate, readings }. */
 const parseMonitoringFile = async (buffer: Buffer, filename?: string): Promise<{ useTemplate: boolean; readings: any[] }> => {
   const rawRows = await parseMonitoringFileBuffer(buffer, filename);
   const useTemplate = rawRows.length > 0 && (() => {
@@ -2407,9 +2775,7 @@ const parseMonitoringFile = async (buffer: Buffer, filename?: string): Promise<{
     const keys = Object.keys(first || {});
     return TEMPLATE_HEADERS.filter((h) => keys.some((k) => k.trim().toLowerCase() === h.toLowerCase())).length >= 5;
   })();
-  const readings = useTemplate
-    ? filterNullReadings(rawRowsToReadings(rawRows))
-    : filterNullReadings(await extractMonitoringReadingsWithGemini(buffer, filename));
+  const readings = filterNullReadings(rawRowsToReadings(rawRows));
   return { useTemplate, readings };
 };
 
@@ -2479,11 +2845,49 @@ export const importMonitoringReadings = async (req: any, res: Response) => {
     if (!admission) return res.status(404).json({ message: 'Admission not found' });
 
     const { useTemplate, readings } = await parseMonitoringFile(req.file.buffer, req.file.originalname);
+    const totalInFile = readings.length;
 
-    const BATCH_SIZE = 100;
+    if (totalInFile === 0) {
+      return res.json({
+        imported: 0,
+        skipped: 0,
+        total: 0,
+        summary: 'No valid records found in file.',
+      });
+    }
+
+    const toKey = (r: any) => new Date(r.recorded_at).toISOString().slice(0, 19);
+    const timestampsInFile = new Set(readings.map(toKey));
+    const minTs = new Date(Math.min(...readings.map((r: any) => new Date(r.recorded_at).getTime()))).toISOString();
+    const maxTs = new Date(Math.max(...readings.map((r: any) => new Date(r.recorded_at).getTime()))).toISOString();
+
+    const [existingRows]: any = await sequelize.query(
+      `SELECT recorded_at FROM monitoring_readings
+       WHERE admission_id = :admissionId AND recorded_at >= :minTs AND recorded_at <= :maxTs`,
+      { replacements: { admissionId, minTs, maxTs }, type: QueryTypes.SELECT }
+    );
+    const existingSet = new Set(
+      (Array.isArray(existingRows) ? existingRows : []).map((row: any) =>
+        new Date(row.recorded_at).toISOString().slice(0, 19)
+      )
+    );
+
+    const toInsert = readings.filter((r) => !existingSet.has(toKey(r)));
+    const skipped = totalInFile - toInsert.length;
+
+    if (toInsert.length === 0) {
+      return res.json({
+        imported: 0,
+        skipped,
+        total: totalInFile,
+        summary: `All ${totalInFile} record(s) already exist. No new records imported.`,
+      });
+    }
+
+    const BATCH_SIZE = 500;
     const inserted: any[] = [];
-    for (let i = 0; i < readings.length; i += BATCH_SIZE) {
-      const batch = readings.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+      const batch = toInsert.slice(i, i + BATCH_SIZE);
       const values = batch.map((_, idx) => {
         const o = idx * 10;
         return `(:id${o}, :admission_id, :recorded_at${o}, :heart_rate${o}, :breath_rate${o}, :spo2${o}, :temperature${o}, :systolic_bp${o}, :diastolic_bp${o}, :movement${o})`;
@@ -2511,7 +2915,19 @@ export const importMonitoringReadings = async (req: any, res: Response) => {
       const arr = Array.isArray(raw) ? raw : (raw?.rows && Array.isArray(raw.rows) ? raw.rows : []);
       inserted.push(...arr);
     }
-    return res.json({ imported: inserted.length, readings: inserted });
+
+    const summary =
+      skipped > 0
+        ? `Imported ${inserted.length} of ${totalInFile} records. ${skipped} duplicate(s) skipped (same datetime already exists).`
+        : `Imported ${inserted.length} record(s).`;
+
+    return res.json({
+      imported: inserted.length,
+      skipped,
+      total: totalInFile,
+      summary,
+      readings: inserted,
+    });
   } catch (err: any) {
     console.error('❌ [HEALTH] importMonitoringReadings error:', err.message || err);
     const isDbError = err?.code === 'ECONNREFUSED' || err?.code === 'ECONNRESET' || err?.message?.includes('ECONNREFUSED') || err?.message?.includes('connect');
@@ -2519,6 +2935,61 @@ export const importMonitoringReadings = async (req: any, res: Response) => {
       return res.status(503).json({ message: 'Database unavailable. Ensure PostgreSQL is running and DB connection is configured.', error: err.message });
     }
     return res.status(500).json({ message: 'Import failed: ' + (err?.message || 'Unknown error') });
+  }
+};
+
+export const deleteMonitoringReadings = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  const clientId = req.body?.client_id || req.query.client_id;
+  const targetUserId = clientId || userId;
+  const { admissionId } = req.params;
+  const { ids, deleteAll, start_date, end_date } = req.body || {};
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const [adm]: any = await sequelize.query(
+      `SELECT id FROM institution_admissions WHERE id = :admissionId AND patient_user_id = :targetUserId LIMIT 1`,
+      { replacements: { admissionId, targetUserId }, type: QueryTypes.SELECT }
+    );
+    const admission = Array.isArray(adm) ? adm[0] : adm;
+    if (!admission) return res.status(404).json({ message: 'Admission not found' });
+
+    let deleted = 0;
+    if (Array.isArray(ids) && ids.length > 0) {
+      const placeholders = ids.map((_: string, i: number) => `:id${i}`).join(',');
+      const replacements: Record<string, any> = { admissionId };
+      ids.forEach((id: string, i: number) => {
+        replacements[`id${i}`] = id;
+      });
+      const [rows]: any = await sequelize.query(
+        `DELETE FROM monitoring_readings WHERE admission_id = :admissionId AND id IN (${placeholders}) RETURNING id`,
+        { replacements }
+      );
+      deleted = Array.isArray(rows) ? rows.length : 0;
+    } else if (deleteAll === true) {
+      let sql = `DELETE FROM monitoring_readings WHERE admission_id = :admissionId`;
+      const replacements: Record<string, any> = { admissionId };
+      if (start_date) {
+        sql += ` AND recorded_at >= :start_date`;
+        replacements.start_date = start_date;
+      }
+      if (end_date) {
+        sql += ` AND recorded_at <= :end_date`;
+        replacements.end_date = end_date;
+      }
+      sql += ` RETURNING id`;
+      const [rows]: any = await sequelize.query(sql, { replacements });
+      deleted = Array.isArray(rows) ? rows.length : 0;
+    } else {
+      return res.status(400).json({ message: 'Provide ids array or deleteAll: true' });
+    }
+
+    return res.json({ deleted });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] deleteMonitoringReadings error:', err.message || err);
+    return res.status(500).json({ message: 'Delete failed: ' + (err?.message || 'Unknown error') });
   }
 };
 
@@ -2555,6 +3026,263 @@ export const getAdmissionTreatments = async (req: any, res: Response) => {
     return res.json({ treatments });
   } catch (err: any) {
     console.error('❌ [HEALTH] getAdmissionTreatments error:', err.message || err);
+    return res.status(503).json({ message: 'Database unavailable.', error: err.message });
+  }
+};
+
+/**
+ * Step 1: Scan patient QR → return today's open appointments for selection.
+ * Also returns scanner role, patient info, and relevant doctor IDs.
+ */
+export const scanLookup = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const { patientUserId } = req.body;
+  if (!patientUserId) return res.status(400).json({ message: 'patientUserId is required' });
+
+  try {
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const sharedDb = await getSharedSequelize();
+    const cols = await describeTableSafe('appointments');
+    const resolved = resolveAppointmentColumns(cols);
+    const { patientCol, doctorCol, datetimeCol, statusCol, titleCol, hasSplitDateTime, appointmentDateCol, appointmentTimeCol } = resolved;
+
+    if (!cols || !patientCol || !doctorCol || !statusCol) {
+      return res.status(500).json({ message: 'Appointments table not ready' });
+    }
+
+    const privRows: any[] = await sharedDb.query(
+      `SELECT roles FROM platform_privileges WHERE user_id = :userId AND platform_name = 'aarogya-mitra' LIMIT 1`,
+      { replacements: { userId }, type: QueryTypes.SELECT }
+    );
+    const rawRoles: string[] = privRows?.[0]?.roles || [];
+    const roles = rawRoles.map((r: string) => String(r).toLowerCase());
+    const isDoctor = roles.some(r => r === 'doctor');
+    const isReceptionist = roles.some(r => ['receptionist', 'nurse'].includes(r));
+
+    if (!isDoctor && !isReceptionist) {
+      return res.status(403).json({ message: 'Only doctors and receptionists can scan patients' });
+    }
+
+    // Patient info
+    const patientRows: any[] = await sharedDb.query(
+      `SELECT name, phone FROM users WHERE id = :pid LIMIT 1`,
+      { replacements: { pid: patientUserId }, type: QueryTypes.SELECT }
+    );
+    const patient = patientRows?.[0] || {};
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateFilter = hasSplitDateTime && appointmentDateCol
+      ? `"${appointmentDateCol}" = :today`
+      : datetimeCol
+        ? `"${datetimeCol}"::date = :today`
+        : `created_at::date = :today`;
+
+    let doctorIds: string[] = [];
+    let doctorMap: Record<string, { name: string; phone: string }> = {};
+
+    if (isDoctor) {
+      doctorIds = [userId];
+    } else {
+      const employers: any[] = await sequelize.query(
+        `SELECT DISTINCT patient_user_id AS doctor_id FROM patient_resources WHERE resource_user_id = :userId`,
+        { replacements: { userId }, type: QueryTypes.SELECT }
+      );
+      doctorIds = employers.map((e: any) => e.doctor_id).filter(Boolean);
+    }
+
+    if (doctorIds.length === 0) {
+      return res.status(404).json({ message: 'You are not assigned to any doctor' });
+    }
+
+    // Get doctor names
+    const docRows: any[] = await sharedDb.query(
+      `SELECT id, name, phone FROM users WHERE id IN (:doctorIds)`,
+      { replacements: { doctorIds }, type: QueryTypes.SELECT }
+    );
+    for (const d of docRows) {
+      doctorMap[d.id] = { name: d.name || 'Doctor', phone: d.phone || '' };
+    }
+
+    const timeSel = hasSplitDateTime && appointmentTimeCol ? `, "${appointmentTimeCol}" AS appointment_time` : '';
+    const dateSel = hasSplitDateTime && appointmentDateCol ? `, "${appointmentDateCol}" AS appointment_date` : '';
+    const dtSel = datetimeCol ? `, "${datetimeCol}" AS datetime` : '';
+    const titleSel = titleCol ? `, "${titleCol}" AS title` : '';
+
+    const appts: any[] = await sequelize.query(
+      `SELECT id, "${doctorCol}" AS doctor_user_id, "${statusCol}" AS status,
+              waiting_number${titleSel}${dtSel}${dateSel}${timeSel}
+       FROM appointments
+       WHERE "${doctorCol}" IN (:doctorIds) AND "${patientCol}" = :patientUserId AND ${dateFilter}
+       ORDER BY created_at ASC`,
+      { replacements: { doctorIds, patientUserId, today: todayStr }, type: QueryTypes.SELECT }
+    );
+
+    const appointments = appts.map(a => ({
+      id: a.id,
+      doctorUserId: a.doctor_user_id,
+      doctorName: doctorMap[a.doctor_user_id]?.name || 'Doctor',
+      status: a.status,
+      waitingNumber: a.waiting_number,
+      title: a.title || null,
+      datetime: a.datetime || null,
+      appointmentDate: a.appointment_date || null,
+      appointmentTime: a.appointment_time || null,
+    }));
+
+    return res.json({
+      scannerRole: isDoctor ? 'doctor' : 'receptionist',
+      patientUserId,
+      patientName: patient.name || 'Patient',
+      patientPhone: patient.phone || '',
+      doctorIds,
+      doctorMap,
+      appointments,
+    });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] scanLookup error:', err.message || err);
+    return res.status(503).json({ message: 'Database unavailable.', error: err.message });
+  }
+};
+
+/**
+ * Step 2: Act on a specific appointment (or create new).
+ * Body: { patientUserId, appointmentId?, doctorUserId? }
+ * - appointmentId provided → update that appointment's status
+ * - appointmentId absent → create new appointment for this patient + doctor, then set status
+ */
+export const scanCheckin = async (req: any, res: Response) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+  const { patientUserId, appointmentId, doctorUserId } = req.body;
+  if (!patientUserId) return res.status(400).json({ message: 'patientUserId is required' });
+
+  try {
+    await ensureHealthTablesReady();
+    const sequelize = await getAppSequelize();
+    const sharedDb = await getSharedSequelize();
+    const cols = await describeTableSafe('appointments');
+    const resolved = resolveAppointmentColumns(cols);
+    const { patientCol, doctorCol, datetimeCol, statusCol, titleCol, hasSplitDateTime, appointmentDateCol, appointmentTimeCol, doctorNameCol, doctorPhoneCol, patientNameCol, patientPhoneCol, appointmentIdCol, qrCodeCol, hcpNameCol, clinicNameCol, practiceNameCol } = resolved;
+
+    if (!cols || !patientCol || !doctorCol || !statusCol) {
+      return res.status(500).json({ message: 'Appointments table not ready' });
+    }
+
+    const privRows: any[] = await sharedDb.query(
+      `SELECT roles FROM platform_privileges WHERE user_id = :userId AND platform_name = 'aarogya-mitra' LIMIT 1`,
+      { replacements: { userId }, type: QueryTypes.SELECT }
+    );
+    const rawRoles: string[] = privRows?.[0]?.roles || [];
+    const roles = rawRoles.map((r: string) => String(r).toLowerCase());
+    const isDoctor = roles.some(r => r === 'doctor');
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateFilter = hasSplitDateTime && appointmentDateCol
+      ? `"${appointmentDateCol}" = :today`
+      : datetimeCol
+        ? `"${datetimeCol}"::date = :today`
+        : `created_at::date = :today`;
+
+    // Resolve which doctor this appointment is for
+    const effectiveDoctorId = isDoctor ? userId : (doctorUserId || null);
+    if (!effectiveDoctorId) return res.status(400).json({ message: 'doctorUserId is required for non-doctor scanners' });
+
+    // Get doctor + patient names for new appointment creation
+    const docInfoRows: any[] = await sharedDb.query(
+      `SELECT name, phone FROM users WHERE id = :did LIMIT 1`,
+      { replacements: { did: effectiveDoctorId }, type: QueryTypes.SELECT }
+    );
+    const docInfo = docInfoRows?.[0] || {};
+    const patientInfoRows: any[] = await sharedDb.query(
+      `SELECT name, phone FROM users WHERE id = :pid LIMIT 1`,
+      { replacements: { pid: patientUserId }, type: QueryTypes.SELECT }
+    );
+    const patientInfo = patientInfoRows?.[0] || {};
+
+    let targetApptId = appointmentId;
+
+    // If no appointmentId, create a new appointment
+    if (!targetApptId) {
+      const insertCols: string[] = [];
+      const vals: string[] = [];
+      const params: Record<string, any> = {};
+      const usedCols = new Set<string>();
+
+      const pushCol = (colName: string | null, paramName: string, value: any) => {
+        if (!colName || usedCols.has(colName)) return;
+        usedCols.add(colName);
+        insertCols.push(`"${colName}"`);
+        vals.push(`:${paramName}`);
+        params[paramName] = value;
+      };
+
+      const newId = uuidv4();
+      pushCol('id', 'id', newId);
+      pushCol(patientCol, 'patient', patientUserId);
+      pushCol(doctorCol, 'doctor', effectiveDoctorId);
+      pushCol(doctorNameCol, 'doctorName', docInfo.name || null);
+      pushCol(doctorPhoneCol, 'doctorPhone', docInfo.phone || null);
+      pushCol(titleCol, 'title', 'Walk-in');
+      if (hasSplitDateTime) {
+        pushCol(appointmentDateCol, 'appointmentDate', todayStr);
+        pushCol(appointmentTimeCol, 'appointmentTime', new Date().toTimeString().slice(0, 5));
+      } else if (datetimeCol) {
+        pushCol(datetimeCol, 'datetime', new Date().toISOString());
+      }
+      pushCol(patientNameCol, 'patientName', patientInfo.name || '');
+      pushCol(patientPhoneCol, 'patientPhone', patientInfo.phone || '');
+      if (appointmentIdCol) pushCol(appointmentIdCol, 'appointmentIdStr', newId.slice(0, 50));
+      if (qrCodeCol) pushCol(qrCodeCol, 'qrCodeStr', newId.slice(0, 100));
+      if (hcpNameCol) pushCol(hcpNameCol, 'hcpName', docInfo.name || '');
+      if (clinicNameCol) pushCol(clinicNameCol, 'clinicName', docInfo.name || '');
+      if (practiceNameCol) pushCol(practiceNameCol, 'practiceName', docInfo.name || '');
+
+      const sql = `INSERT INTO appointments (${insertCols.join(', ')}) VALUES (${vals.join(', ')}) RETURNING id`;
+      const [rows]: any = await sequelize.query(sql, { replacements: params, type: QueryTypes.INSERT });
+      targetApptId = Array.isArray(rows) && rows.length > 0 ? (rows[0]?.id || newId) : newId;
+    }
+
+    // Now update the appointment status
+    const newStatus = isDoctor ? 'consulting' : 'waiting';
+    let waitingNumber: number | null = null;
+
+    if (newStatus === 'waiting') {
+      const maxRow: any[] = await sequelize.query(
+        `SELECT COALESCE(MAX(waiting_number), 0) AS max_num
+         FROM appointments
+         WHERE "${doctorCol}" = :doctorId AND ${dateFilter} AND "${statusCol}" = 'waiting'`,
+        { replacements: { doctorId: effectiveDoctorId, today: todayStr }, type: QueryTypes.SELECT }
+      );
+      waitingNumber = (maxRow?.[0]?.max_num || 0) + 1;
+      await sequelize.query(
+        `UPDATE appointments SET "${statusCol}" = 'waiting', waiting_number = :num, updated_at = NOW() WHERE id = :id`,
+        { replacements: { num: waitingNumber, id: targetApptId }, type: QueryTypes.UPDATE }
+      );
+    } else {
+      await sequelize.query(
+        `UPDATE appointments SET "${statusCol}" = 'consulting', updated_at = NOW() WHERE id = :id`,
+        { replacements: { id: targetApptId }, type: QueryTypes.UPDATE }
+      );
+    }
+
+    return res.json({
+      action: newStatus,
+      appointmentId: targetApptId,
+      patientUserId,
+      patientName: patientInfo.name || 'Patient',
+      patientPhone: patientInfo.phone || '',
+      doctorUserId: effectiveDoctorId,
+      doctorName: docInfo.name || 'Doctor',
+      waitingNumber,
+      navigate: isDoctor,
+      created: !appointmentId,
+    });
+  } catch (err: any) {
+    console.error('❌ [HEALTH] scanCheckin error:', err.message || err);
     return res.status(503).json({ message: 'Database unavailable.', error: err.message });
   }
 };

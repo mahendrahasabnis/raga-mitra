@@ -342,8 +342,8 @@ const TodayPage: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Date selection (same pattern as Fitness Calendar) */}
-      <section className={`${cardBase} p-4`}>
-        <div className="flex items-center justify-between">
+      <section className={`${cardBase} px-3 py-3`}>
+        <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => {
@@ -351,41 +351,39 @@ const TodayPage: React.FC = () => {
               prev.setDate(prev.getDate() - 1);
               setSelectedDate(prev);
             }}
-            className="p-2 rounded-lg hover:bg-white/10"
+            className="shrink-0 p-2 rounded-lg hover:bg-white/10"
             aria-label="Previous day"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-sm min-w-[200px] text-center">
-              {formatCompactDate(selectedDate)}
-            </h3>
-            <button
-              type="button"
-              onClick={() => {
-                const picker = datePickerRef.current;
-                if (!picker) return;
-                if (typeof (picker as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
-                  (picker as HTMLInputElement & { showPicker: () => void }).showPicker();
-                } else {
-                  picker.focus();
-                  picker.click();
-                }
-              }}
-              className="p-2 rounded-lg hover:bg-white/10 inline-flex items-center gap-1"
-              title="Pick a date"
-            >
-              <CalendarIcon className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedDate(new Date())}
-              className="btn-secondary text-xs px-3"
-              title="Go to today"
-            >
-              Today
-            </button>
-          </div>
+          <h3 className="flex-1 font-semibold text-sm text-center truncate">
+            {formatCompactDate(selectedDate)}
+          </h3>
+          <button
+            type="button"
+            onClick={() => {
+              const picker = datePickerRef.current;
+              if (!picker) return;
+              if (typeof (picker as HTMLInputElement & { showPicker?: () => void }).showPicker === "function") {
+                (picker as HTMLInputElement & { showPicker: () => void }).showPicker();
+              } else {
+                picker.focus();
+                picker.click();
+              }
+            }}
+            className="shrink-0 p-2 rounded-lg hover:bg-white/10"
+            title="Pick a date"
+          >
+            <CalendarIcon className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(new Date())}
+            className="shrink-0 btn-secondary text-xs px-3"
+            title="Go to today"
+          >
+            Today
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -393,7 +391,7 @@ const TodayPage: React.FC = () => {
               next.setDate(next.getDate() + 1);
               setSelectedDate(next);
             }}
-            className="p-2 rounded-lg hover:bg-white/10"
+            className="shrink-0 p-2 rounded-lg hover:bg-white/10"
             aria-label="Next day"
           >
             <ChevronRight className="h-5 w-5" />
@@ -412,111 +410,112 @@ const TodayPage: React.FC = () => {
         />
       </section>
 
-      {/* Metrics: Last known weight, Week-to-date % compliance (Monday = start of week) */}
+      {/* Metrics */}
       <section className={`${cardBase} p-4`}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-lg bg-white/5 p-3 border border-white/10 today-metric-box">
-            <div className="flex items-center gap-2 text-gray-400 text-xs uppercase tracking-wide mb-1">
-              <Scale className="h-3.5 w-3.5" />
-              Last known weight
-            </div>
-            <p className="text-lg font-semibold">
-              {lastWeight
-                ? `${lastWeight.value} ${lastWeight.unit || "kg"}`
-                : "—"}
-            </p>
-            {(lastWeight?.measured_at || lastWeight?.recorded_date || lastWeight?.created_at) && (
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                as on {new Date(lastWeight.measured_at || lastWeight.recorded_date || lastWeight.created_at).toLocaleDateString()}
-              </p>
-            )}
+        <div className="rounded-lg bg-white/5 p-3 border border-white/10 today-metric-box mb-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Scale className="h-4 w-4 text-gray-400" />
+            <span className="text-base font-semibold">Weight</span>
           </div>
+          <p className="text-2xl font-bold">
+            {lastWeight ? `${lastWeight.value} ${lastWeight.unit || "kg"}` : "—"}
+          </p>
+          {(lastWeight?.measured_at || lastWeight?.recorded_date || lastWeight?.created_at) && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              as on {new Date(lastWeight.measured_at || lastWeight.recorded_date || lastWeight.created_at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+            </p>
+          )}
+        </div>
+
+        <h3 className="text-sm text-gray-400 mb-2">
+          Week to date: {new Date(weekStart + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })} — {formatCompactDate(selectedDate)}
+        </h3>
+        <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg bg-white/5 p-3 border border-white/10 today-metric-box">
-            <div className="flex items-center gap-2 text-gray-400 text-xs uppercase tracking-wide mb-1">
-              <Pill className="h-3.5 w-3.5" />
-              Week to date (Mon–{selectedDateKey})
+            <div className="flex items-center gap-1.5 mb-1">
+              <Pill className="h-4 w-4 text-gray-400" />
+              <span className="text-base font-semibold">Medicine</span>
             </div>
-            <p className="text-lg font-semibold">
+            <p className="text-2xl font-bold">
               {medicineCompliance != null ? `${medicineCompliance}%` : "—"}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Medicine</p>
           </div>
           <div className="rounded-lg bg-white/5 p-3 border border-white/10 today-metric-box">
-            <div className="flex items-center gap-2 text-gray-400 text-xs uppercase tracking-wide mb-1">
-              <Dumbbell className="h-3.5 w-3.5" />
-              Week to date (Mon–{selectedDateKey})
+            <div className="flex items-center gap-1.5 mb-1">
+              <Dumbbell className="h-4 w-4 text-gray-400" />
+              <span className="text-base font-semibold">Exercise</span>
             </div>
-            <p className="text-lg font-semibold">
+            <p className="text-2xl font-bold">
               {exerciseCompliance != null ? `${exerciseCompliance}%` : "—"}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Exercise</p>
           </div>
           <div className="rounded-lg bg-white/5 p-3 border border-white/10 today-metric-box">
-            <div className="flex items-center gap-2 text-gray-400 text-xs uppercase tracking-wide mb-1">
-              <Salad className="h-3.5 w-3.5" />
-              Week to date (Mon–{selectedDateKey})
+            <div className="flex items-center gap-1.5 mb-1">
+              <Salad className="h-4 w-4 text-gray-400" />
+              <span className="text-base font-semibold">Meals</span>
             </div>
-            <p className="text-lg font-semibold">
+            <p className="text-2xl font-bold">
               {mealCompliance != null ? `${mealCompliance}%` : "—"}
-              {mealComplianceResult.total > 0 && (
-                <span className="text-xs font-normal text-gray-500 ml-1">
-                  ({mealComplianceResult.completed}/{mealComplianceResult.total} sessions)
-                </span>
-              )}
             </p>
-            <p className="text-[11px] text-gray-500 mt-0.5">Meals</p>
+            {mealComplianceResult.total > 0 && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                {mealComplianceResult.completed}/{mealComplianceResult.total} sessions
+              </p>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Quick actions */}
+      {/* Quick actions — hidden when viewing a patient/client */}
+      {!selectedClient && (
       <section className={`${cardBase} p-4`}>
-        <h2 className="text-lg font-semibold mb-3">Quick Actions</h2>
-        <div className="flex flex-wrap gap-2">
+        <h2 className="text-lg font-semibold mb-3">My Quick Actions</h2>
+        <div className="flex flex-col items-center gap-2 landscape:flex-row landscape:flex-wrap landscape:justify-center">
           <button
             onClick={() => setShowScanModal(true)}
-            className="btn-primary flex items-center gap-2"
+            className="btn-primary flex items-center justify-center gap-2 w-full max-w-xs landscape:w-auto landscape:max-w-none"
           >
             <Scan className="h-4 w-4" />
             Scan document
           </button>
           <button
             onClick={() => setShowAppointmentForm(true)}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center justify-center gap-2 w-full max-w-xs landscape:w-auto landscape:max-w-none"
           >
             <CalendarIcon className="h-4 w-4" />
             Add Appointment
           </button>
           <button
             onClick={() => navigate(`/app/fitness/session/${selectedDateKey}`)}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center justify-center gap-2 w-full max-w-xs landscape:w-auto landscape:max-w-none"
           >
             <Activity className="h-4 w-4" />
             Record Exercise
           </button>
           <button
             onClick={() => navigate(`/app/diet/session/${selectedDateKey}`)}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center justify-center gap-2 w-full max-w-xs landscape:w-auto landscape:max-w-none"
           >
             <UtensilsCrossed className="h-4 w-4" />
             Record Meal
           </button>
           <button
             onClick={() => setShowVitalsForm(true)}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center justify-center gap-2 w-full max-w-xs landscape:w-auto landscape:max-w-none"
           >
             <Stethoscope className="h-4 w-4" />
             Add Vitals
           </button>
         </div>
       </section>
+      )}
 
       {/* Sequence cards: Exercise, Diet, Medicine, Dr. appointment */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <section className={`${cardBase} p-4`}>
           <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
             <Dumbbell className="h-4 w-4 text-rose-200" />
-            Exercise sessions planned
+            {selectedClient ? "Exercise sessions planned" : "My exercise sessions"}
           </h3>
           <div className="space-y-2">
             {dateSessionsFitness.length === 0 && (
@@ -540,15 +539,16 @@ const TodayPage: React.FC = () => {
                     : status === "partial"
                       ? "text-blue-400"
                       : "text-gray-400";
+              const CardTag = selectedClient ? motion.div : motion.button;
               return (
-                <motion.button
+                <CardTag
                   key={s.id}
-                  type="button"
-                  whileHover={{ scale: 1.01 }}
-                  onClick={() =>
+                  {...(!selectedClient ? { type: "button" as const } : {})}
+                  whileHover={selectedClient ? undefined : { scale: 1.01 }}
+                  onClick={selectedClient ? undefined : () =>
                     navigate(`/app/fitness/session/${selectedDateKey}?sessionId=${s.id}`)
                   }
-                  className="w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 hover:border-rose-400/30 flex items-center gap-2 today-list-item"
+                  className={`w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 flex items-center gap-2 today-list-item ${selectedClient ? "cursor-default" : "hover:border-rose-400/30"}`}
                 >
                   <span
                     className="shrink-0 w-2.5 h-2.5 rounded-full"
@@ -563,7 +563,7 @@ const TodayPage: React.FC = () => {
                       {statusLabel(status)} · {total ? `${done}/${total} (${pct}%)` : "—"}
                     </p>
                   </div>
-                </motion.button>
+                </CardTag>
               );
             })}
           </div>
@@ -572,7 +572,7 @@ const TodayPage: React.FC = () => {
         <section className={`${cardBase} p-4`}>
           <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
             <UtensilsCrossed className="h-4 w-4 text-rose-200" />
-            Diet plan (meals)
+            {selectedClient ? "Diet plan (meals)" : "My diet plan (meals)"}
           </h3>
           <div className="space-y-2">
             {dateSessionsDiet.length === 0 && (
@@ -590,24 +590,25 @@ const TodayPage: React.FC = () => {
                     : status === "partial"
                       ? "text-blue-400"
                       : "text-gray-400";
+              const DietCardTag = selectedClient ? motion.div : motion.button;
               return (
-                <motion.button
+                <DietCardTag
                   key={s.id}
-                  type="button"
-                  whileHover={{ scale: 1.01 }}
-                  onClick={() =>
+                  {...(!selectedClient ? { type: "button" as const } : {})}
+                  whileHover={selectedClient ? undefined : { scale: 1.01 }}
+                  onClick={selectedClient ? undefined : () =>
                     navigate(`/app/diet/session/${selectedDateKey}?sessionId=${s.id}`)
                   }
-                  className="w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 hover:border-rose-400/30 today-list-item"
+                  className={`w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 today-list-item ${selectedClient ? "cursor-default" : "hover:border-rose-400/30"}`}
                 >
                   <p className="font-medium text-sm">{s.session_name || s.name || "Meal"}</p>
                   <p className="text-xs text-gray-400">
-                    {(s.items?.length ?? s.meals?.length ?? 0)} item(s) · Tap to track
+                    {(s.items?.length ?? s.meals?.length ?? 0)} item(s){!selectedClient && " · Tap to track"}
                   </p>
                   <p className={`text-xs mt-0.5 ${statusColor}`}>
                     {statusLabel(status)} · {total ? `${done}/${total} (${pct}%)` : "—"}
                   </p>
-                </motion.button>
+                </DietCardTag>
               );
             })}
           </div>
@@ -616,39 +617,43 @@ const TodayPage: React.FC = () => {
         <section className={`${cardBase} p-4`}>
           <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
             <Pill className="h-4 w-4 text-rose-200" />
-            Medicines schedule
+            {selectedClient ? "Medicines schedule" : "My medicines"}
           </h3>
           <div className="space-y-2">
             {medicines.length === 0 && (
               <p className="text-sm text-gray-400">No medicines scheduled.</p>
             )}
-            {medicines.slice(0, 10).map((med: any) => (
-              <motion.button
-                key={med.id || med.name}
-                type="button"
-                whileHover={{ scale: 1.01 }}
-                onClick={() =>
-                  openActuals("medicine", {
-                    title: med.name || med.medicine_name || "Medicine",
-                    subtitle: med.dosage || med.timing,
-                    details: med.instructions,
-                  })
-                }
-                className="w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 hover:border-rose-400/30 today-list-item"
-              >
-                <p className="font-medium text-sm">{med.name || med.medicine_name}</p>
-                <p className="text-xs text-gray-400">
-                  {med.dosage || ""} {med.timing || ""}
-                </p>
-              </motion.button>
-            ))}
+            {medicines.slice(0, 10).map((med: any) => {
+              const MedTag = selectedClient ? motion.div : motion.button;
+              return (
+                <MedTag
+                  key={med.id || med.name}
+                  {...(!selectedClient ? { type: "button" as const } : {})}
+                  whileHover={selectedClient ? undefined : { scale: 1.01 }}
+                  onClick={selectedClient ? undefined : () =>
+                    openActuals("medicine", {
+                      title: med.name || med.medicine_name || "Medicine",
+                      subtitle: med.dosage || med.timing,
+                      details: med.instructions,
+                    })
+                  }
+                  className={`w-full text-left rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 today-list-item ${selectedClient ? "cursor-default" : "hover:border-rose-400/30"}`}
+                >
+                  <p className="font-medium text-sm">{med.name || med.medicine_name}</p>
+                  <p className="text-xs text-gray-400">
+                    {med.dosage || ""} {med.timing || ""}
+                  </p>
+                </MedTag>
+              );
+            })}
           </div>
         </section>
 
+        {!selectedClient && (
         <section className={`${cardBase} p-4`}>
           <h3 className="text-base font-semibold mb-3 flex items-center gap-2">
             <CalendarIcon className="h-4 w-4 text-rose-200" />
-            Doctor appointments
+            My appointments
           </h3>
           <div className="space-y-2">
             {dateAppointments.length === 0 && (
@@ -679,6 +684,7 @@ const TodayPage: React.FC = () => {
             ))}
           </div>
         </section>
+        )}
       </div>
 
       {/* Modals */}

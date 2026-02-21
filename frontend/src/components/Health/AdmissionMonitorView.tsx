@@ -13,8 +13,14 @@ import {
   LayoutList,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Pill,
   RefreshCw,
+  Trash2,
+  Table2,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { healthApi } from "../../services/api";
 import {
@@ -50,6 +56,72 @@ const DEFAULT_Y_DOMAIN: Record<string, [number, number]> = {
 
 const TREATMENT_LINE_UNSELECTED = "#10b981";
 const TREATMENT_LINE_SELECTED = "#fbbf24";
+const TREATMENT_LINE_HIT_WIDTH = 24; // px each side for easier clicking
+
+/** Custom shape for treatment ReferenceLine – adds wide invisible hit area so clicks work (Recharts ReferenceLine does not forward onClick). */
+function TreatmentLineShape(props: {
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  segment?: Array<{ x?: number; y?: number }>;
+  stroke?: string;
+  strokeWidth?: number;
+  viewBox?: { x?: number; y?: number; width?: number; height?: number };
+  treatment: any;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const { x1, y1, x2, y2, segment, stroke, strokeWidth, viewBox, treatment, isSelected, onSelect } = props;
+  let cx: number;
+  let top: number;
+  let bottom: number;
+  if (Array.isArray(segment) && segment.length >= 2) {
+    const [p1, p2] = segment;
+    cx = (p1.x ?? p2.x) ?? 0;
+    const py1 = p1.y ?? 0;
+    const py2 = p2.y ?? 0;
+    top = Math.min(py1, py2);
+    bottom = Math.max(py1, py2);
+  } else {
+    cx = x1 ?? x2 ?? viewBox?.x ?? 0;
+    top = Math.min(y1 ?? 0, y2 ?? 0);
+    bottom = Math.max(y1 ?? 0, y2 ?? 0);
+  }
+  const chartHeight = viewBox?.height ?? 180;
+  const h = bottom - top > 0 ? bottom - top : chartHeight;
+  const lineTop = bottom - top > 0 ? top : 0;
+  const lineBottom = bottom - top > 0 ? bottom : chartHeight;
+  return (
+    <g
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      style={{ cursor: "pointer" }}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === "Enter" && onSelect()}
+      aria-label={`Treatment: ${treatment?.treatment_name || "Treatment"} at ${treatment?.recorded_at ? new Date(treatment.recorded_at).toLocaleString() : ""}`}
+    >
+      <rect
+        x={cx - TREATMENT_LINE_HIT_WIDTH / 2}
+        y={lineTop}
+        width={TREATMENT_LINE_HIT_WIDTH}
+        height={h}
+        fill="transparent"
+      />
+      <line
+        x1={cx}
+        y1={lineTop}
+        x2={cx}
+        y2={lineBottom}
+        stroke={stroke ?? (isSelected ? TREATMENT_LINE_SELECTED : TREATMENT_LINE_UNSELECTED)}
+        strokeWidth={strokeWidth ?? 4}
+      />
+    </g>
+  );
+}
 
 function niceDomain(min: number, max: number, paddingPercent = 0.1): [number, number] {
   const span = Math.max(max - min, 1);
@@ -104,6 +176,19 @@ function formatTreatmentSummary(t: any): string {
   return `${name}${qtyPart}${byPart} at ${at}`;
 }
 
+/** Aggregated treatment text for table (no timestamp) */
+function formatTreatmentDetails(t: any): string {
+  if (!t) return "";
+  const name = t.treatment_name?.trim() || "Treatment";
+  const qty = t.quantity?.trim();
+  const doctor = t.doctor_name?.trim();
+  const notes = t.notes?.trim();
+  const qtyPart = qty ? ` ${qty}` : "";
+  const byPart = doctor ? ` given by ${doctor}` : "";
+  const notesPart = notes ? ` — ${notes}` : "";
+  return `${name}${qtyPart}${byPart}${notesPart}`;
+}
+
 const TIME_RANGE_PRESETS = [
   { id: "1D", label: "1D", days: 1 },
   { id: "1W", label: "1W", days: 7 },
@@ -113,30 +198,6 @@ const TIME_RANGE_PRESETS = [
 ] as const;
 
 const MAX_POINTS_PER_CHART = 300;
-
-/** Wrapper that attaches wheel listener with { passive: false } so preventDefault works for zoom. */
-function ChartWheelZoom({
-  children,
-  onWheelZoom,
-  ...rest
-}: React.HTMLAttributes<HTMLDivElement> & { onWheelZoom: (e: WheelEvent) => void }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      onWheelZoom(e);
-    };
-    el.addEventListener("wheel", handler, { passive: false });
-    return () => el.removeEventListener("wheel", handler);
-  }, [onWheelZoom]);
-  return (
-    <div ref={ref} {...rest}>
-      {children}
-    </div>
-  );
-}
 
 function toDatetimeLocal(d: Date): string {
   return d.toISOString().slice(0, 16);
@@ -159,14 +220,10 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [startDateTime, setStartDateTime] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() - 90);
     return toDatetimeLocal(d);
   });
-  const [endDateTime, setEndDateTime] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return toDatetimeLocal(d);
-  });
+  const [endDateTime, setEndDateTime] = useState(() => toDatetimeLocal(new Date()));
   const lastEnteredRef = useRef<Record<string, string>>({
     heart_rate: "", breath_rate: "", spo2: "", temperature: "", systolic_bp: "", diastolic_bp: "", movement: "0",
   });
@@ -184,12 +241,17 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
   const [saving, setSaving] = useState(false);
   const [chartsPerRow, setChartsPerRow] = useState<1 | 2>(1);
   const [chartViewRanges, setChartViewRanges] = useState<Record<string, { start: number; end: number }>>({});
-  const panRef = useRef<{ paramKey: string; startX: number; startStart: number; startEnd: number } | null>(null);
+  const [chartSelectedPreset, setChartSelectedPreset] = useState<Record<string, string>>({});
+  const [chartDataOverride, setChartDataOverride] = useState<Record<string, { data: any[]; treatments: any[] }>>({});
+  const [chartLoading, setChartLoading] = useState<Record<string, boolean>>({});
+  const [boxSelect, setBoxSelect] = useState<{ paramKey: string; startX: number; startY: number; currentX: number; currentY: number } | null>(null);
+  const boxSelectPendingRef = useRef<{ paramKey: string; startX: number; startY: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const [importStatus, setImportStatus] = useState<"idle" | "previewing" | "processing">("idle");
   const [importPreview, setImportPreview] = useState<any[] | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [usedTemplateFormat, setUsedTemplateFormat] = useState(false);
+  const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number; total: number; summary: string } | null>(null);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importAbortRef = useRef<AbortController | null>(null);
@@ -208,6 +270,13 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
   const [selectedTreatment, setSelectedTreatment] = useState<any | null>(null);
   const [medicineOptions, setMedicineOptions] = useState<string[]>([]);
   const [doctorOptions, setDoctorOptions] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState<10 | 50 | 100 | "all">("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [selectedTreatmentForScroll, setSelectedTreatmentForScroll] = useState<string | null>(null);
+  const rawDataScrollRef = useRef<HTMLDivElement>(null);
+  const rawDataHeaderRef = useRef<HTMLTableSectionElement>(null);
 
   const handleDownloadTemplate = async () => {
     setDownloadingTemplate(true);
@@ -285,12 +354,37 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     await loadReadings(start, end);
     await loadTreatments(start, end);
     setChartViewRanges({});
+    setChartDataOverride({});
+    const spanDays = (new Date(end).getTime() - new Date(start).getTime()) / (24 * 60 * 60 * 1000);
+    const match = TIME_RANGE_PRESETS.find((p) => Math.abs(spanDays - p.days) < 2);
+    if (match) {
+      const preset: Record<string, string> = {};
+      PARAM_KEYS.filter((k) => k !== "movement").forEach((k) => {
+        preset[k] = match.id;
+      });
+      setChartSelectedPreset(preset);
+    } else {
+      setChartSelectedPreset({});
+    }
   }, [startDateTime, endDateTime, admission?.id, selectedClient]);
 
   useEffect(() => {
     setReadings([]);
     setTreatments([]);
     setSelectedTreatment(null);
+    setSelectedIds(new Set());
+    setChartDataOverride({});
+    setChartSelectedPreset({});
+  }, [admission?.id, selectedClient]);
+
+  useEffect(() => {
+    if (!admission?.id) return;
+    const start = toStartIso(startDateTime);
+    const end = toEndIso(endDateTime);
+    if (!start || !end) return;
+    loadReadings(start, end);
+    loadTreatments(start, end);
+    setChartViewRanges({});
   }, [admission?.id, selectedClient]);
 
   useEffect(() => {
@@ -357,7 +451,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     const startMs = new Date(startIso).getTime();
     const endMs = new Date(endIso).getTime();
     const spanDays = (endMs - startMs) / (24 * 60 * 60 * 1000);
-    const match = TIME_RANGE_PRESETS.find((p) => Math.abs(spanDays - p.days) < 0.5);
+    const match = TIME_RANGE_PRESETS.find((p) => Math.abs(spanDays - p.days) < 2);
     return match?.id ?? null;
   }, [startDateTime, endDateTime]);
 
@@ -392,20 +486,36 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     setChartViewRanges((prev) => ({ ...prev, [paramKey]: { start, end } }));
   }, []);
 
-  const applyPresetForChart = useCallback((paramKey: string, days: number) => {
-    if (nData === 0) return;
-    const times = (chartData as any[]).map((d) => d.timestamp);
-    const maxT = Math.max(...times);
-    const minT = Math.min(...times);
-    const windowMs = days * 24 * 60 * 60 * 1000;
-    const startT = maxT - windowMs;
-    const rangeStartT = Math.max(minT, startT);
-    const span = maxT - minT;
-    if (span <= 0) return;
-    const start = ((rangeStartT - minT) / span) * 100;
-    const end = 100;
-    setChartRange(paramKey, start, end);
-  }, [nData, chartData, setChartRange]);
+  const applyPresetForChart = useCallback(
+    async (paramKey: string, days: number, presetId?: string) => {
+      const id = presetId ?? TIME_RANGE_PRESETS.find((p) => p.days === days)?.id;
+      if (id) setChartSelectedPreset((prev) => ({ ...prev, [paramKey]: id }));
+      setChartLoading((prev) => ({ ...prev, [paramKey]: true }));
+      try {
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+        const startIso = startDate.toISOString();
+        const endIso = endDate.toISOString();
+        const [readingsRes, treatmentsRes] = await Promise.all([
+          healthApi.getMonitoringReadings(admission.id, selectedClient || undefined, startIso, endIso),
+          healthApi.getAdmissionTreatments(admission.id, selectedClient || undefined, startIso, endIso),
+        ]);
+        const rList = Array.isArray(readingsRes?.readings) ? readingsRes.readings : [];
+        const tList = Array.isArray(treatmentsRes?.treatments) ? treatmentsRes.treatments : [];
+        setChartDataOverride((prev) => ({
+          ...prev,
+          [paramKey]: { data: rList, treatments: tList },
+        }));
+        setChartRange(paramKey, 0, 100);
+      } catch (err) {
+        console.error("Failed to load chart data:", err);
+      } finally {
+        setChartLoading((prev) => ({ ...prev, [paramKey]: false }));
+      }
+    },
+    [admission.id, selectedClient]
+  );
 
 
   const handleTreatmentSubmit = async (e: React.FormEvent) => {
@@ -490,6 +600,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     setImportPreview(null);
     setImportFile(null);
     setUsedTemplateFormat(false);
+    setImportSummary(null);
     try {
       const res = await healthApi.previewMonitoringImport(admission.id, file, importAbortRef.current.signal);
       setImportPreview(res.rows || []);
@@ -511,13 +622,20 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     importAbortRef.current = new AbortController();
     setImporting(true);
     setImportStatus("processing");
+    setImportSummary(null);
     try {
-      await healthApi.importMonitoringReadings(
+      const res = await healthApi.importMonitoringReadings(
         admission.id,
         importFile,
         selectedClient || undefined,
         importAbortRef.current.signal
       );
+      setImportSummary({
+        imported: res?.imported ?? 0,
+        skipped: res?.skipped ?? 0,
+        total: res?.total ?? importPreview.length,
+        summary: res?.summary ?? `Imported ${res?.imported ?? 0} record(s).`,
+      });
       setImportPreview(null);
       setImportFile(null);
       setUsedTemplateFormat(false);
@@ -539,6 +657,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
     setImportPreview(null);
     setImportFile(null);
     setUsedTemplateFormat(false);
+    setImportSummary(null);
   };
 
   const handleCancelImport = () => {
@@ -547,6 +666,143 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
       setImportPreview(null);
       setImportFile(null);
       setUsedTemplateFormat(false);
+      setImportSummary(null);
+    }
+  };
+
+  const sortedTreatmentsForDropdown = useMemo(() => {
+    return [...(treatments || [])].sort((a, b) => {
+      const ta = new Date(a.recorded_at).getTime();
+      const tb = new Date(b.recorded_at).getTime();
+      return tb - ta;
+    });
+  }, [treatments]);
+
+  useEffect(() => {
+    if (!selectedTreatmentForScroll || !rawDataScrollRef.current) return;
+    const container = rawDataScrollRef.current;
+    const row = container.querySelector(`[data-treatment-id="t-${selectedTreatmentForScroll}"]`);
+    if (row) {
+      const rowRect = row.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const headerHeight = rawDataHeaderRef.current?.clientHeight ?? 44;
+      const targetTop = containerRect.top + headerHeight;
+      const scrollDelta = rowRect.top - targetTop;
+      container.scrollTop += scrollDelta;
+    }
+  }, [selectedTreatmentForScroll]);
+
+  const rawDataItems = useMemo(() => {
+    const rList = (readings || []).map((r) => ({ type: "reading" as const, ...r }));
+    const tList = (treatments || []).map((t) => ({ type: "treatment" as const, ...t }));
+    const combined = [...rList, ...tList].sort((a, b) => {
+      const ta = new Date(a.recorded_at).getTime();
+      const tb = new Date(b.recorded_at).getTime();
+      return ta - tb;
+    });
+    return combined;
+  }, [readings, treatments]);
+
+  const paginatedReadings = useMemo(() => {
+    const list = rawDataItems;
+    const size = pageSize === "all" ? list.length : Math.max(1, pageSize);
+    const total = list.length;
+    const totalPages = size > 0 ? Math.ceil(total / size) : 1;
+    const page = Math.max(1, Math.min(currentPage, totalPages));
+    const start = (page - 1) * size;
+    const slice = list.slice(start, start + size);
+    return { slice, total, totalPages, page };
+  }, [rawDataItems, pageSize, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [pageSize, rawDataItems.length]);
+
+  const toggleSelectAll = () => {
+    const { slice } = paginatedReadings;
+    const readingRows = slice.filter((r) => r.type === "reading" && r.id);
+    const allSelected = readingRows.length > 0 && readingRows.every((r) => selectedIds.has(String(r.id)));
+    if (allSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        readingRows.forEach((r) => next.delete(String(r.id)));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        readingRows.forEach((r) => next.add(String(r.id)));
+        return next;
+      });
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleDeleteOne = async (id: string) => {
+    if (!confirm("Delete this record?")) return;
+    setDeleting(true);
+    try {
+      await healthApi.deleteMonitoringReadings(admission.id, { ids: [id] }, selectedClient || undefined);
+      setReadings((prev) => prev.filter((r) => String(r.id) !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      onRefresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to delete.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) {
+      alert("No records selected.");
+      return;
+    }
+    if (!confirm(`Delete ${ids.length} selected record(s)?`)) return;
+    setDeleting(true);
+    try {
+      await healthApi.deleteMonitoringReadings(admission.id, { ids }, selectedClient || undefined);
+      setReadings((prev) => prev.filter((r) => !ids.includes(String(r.id))));
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to delete.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    const start = toStartIso(startDateTime);
+    const end = toEndIso(endDateTime);
+    if (!confirm(`Delete all ${readings.length} records in the current date range? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await healthApi.deleteMonitoringReadings(
+        admission.id,
+        { deleteAll: true, start_date: start, end_date: end },
+        selectedClient || undefined
+      );
+      setReadings([]);
+      setSelectedIds(new Set());
+      onRefresh();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || "Failed to delete.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -582,17 +838,17 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
 
   return (
     <div className="space-y-4 overflow-x-hidden">
-      <div className="flex items-center gap-4">
+      <div className="flex items-start gap-3">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 text-gray-400 hover:text-gray-200"
+          className="shrink-0 flex items-center gap-1.5 text-gray-400 hover:text-gray-200 mt-0.5"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back
+          <span className="text-sm">Back</span>
         </button>
-        <div className="flex-1">
-          <h3 className="font-semibold">{admission.institution_name}</h3>
-          <p className="text-sm text-gray-400">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-semibold truncate">{admission.institution_name}</h3>
+          <p className="text-xs text-gray-400">
             MRN: {admission.mrn_number || "—"} | Bed: {admission.bed_number || "—"} | Admitted:{" "}
             {admission.admission_date ? String(admission.admission_date).slice(0, 10) : "—"}
           </p>
@@ -606,23 +862,24 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
           tabIndex={0}
           onClick={() => setAddDataExpanded((e) => !e)}
           onKeyDown={(e) => e.key === "Enter" && setAddDataExpanded((prev) => !prev)}
-          className="flex flex-wrap items-center justify-between gap-4 w-full text-left mb-0 cursor-pointer"
+          className="flex items-center gap-2 w-full text-left mb-0 cursor-pointer"
         >
-          <h4 className="font-semibold flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            Add monitoring data
-            {addDataExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+          <h4 className="font-semibold flex items-center gap-2 flex-1 min-w-0">
+            <Activity className="h-4 w-4 shrink-0" />
+            <span className="truncate">Add monitoring data</span>
+            {addDataExpanded ? <ChevronUp className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" />}
           </h4>
-          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+          <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               onClick={handleDownloadTemplate}
               disabled={downloadingTemplate}
-              className="btn-secondary flex items-center gap-2"
+              className="btn-secondary flex items-center gap-1.5 text-xs"
               title="Download CSV template. Fill in Excel, save as CSV, then import. Dates stay correct."
             >
-              <Download className="h-4 w-4" />
-              {downloadingTemplate ? "Downloading…" : "Download Template"}
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{downloadingTemplate ? "Downloading…" : "Download Template"}</span>
+              <span className="sm:hidden">{downloadingTemplate ? "…" : "Template"}</span>
             </button>
             <input
               ref={fileInputRef}
@@ -635,20 +892,32 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
-              className="btn-secondary flex items-center gap-2"
+              className="btn-secondary flex items-center gap-1.5 text-xs"
             >
-              <FileSpreadsheet className="h-4 w-4" />
-              {importing ? "Extracting…" : "Import Excel/CSV"}
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{importing ? (importStatus === "processing" ? "Importing…" : "Extracting…") : "Import Excel/CSV"}</span>
+              <span className="sm:hidden">{importing ? "…" : "Import"}</span>
             </button>
           </div>
         </div>
         {addDataExpanded && (
         <div className="mt-4">
+        {importSummary != null && (
+          <div className="mt-4 p-4 rounded-lg bg-emerald-500/10 border border-emerald-400/30 import-summary-box">
+            <h5 className="font-medium text-emerald-200 mb-2">Import complete</h5>
+            <p className="text-sm mb-2">{importSummary.summary}</p>
+            <p className="text-xs text-gray-400">
+              Imported: {importSummary.imported} · Skipped (duplicates): {importSummary.skipped} · Total in file: {importSummary.total}
+            </p>
+          </div>
+        )}
         {importPreview != null && (
           <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
-            <h5 className="font-medium mb-2">Imported data preview ({importPreview.length} rows)</h5>
+            <h5 className="font-medium mb-2">
+              Import preview — {importPreview.length} record{importPreview.length !== 1 ? "s" : ""} to import
+            </h5>
             {usedTemplateFormat && (
-              <p className="text-xs text-emerald-400/90 mb-2">Template format detected — dates preserved (no AI parsing)</p>
+              <p className="text-xs text-emerald-400/90 mb-2">Template format detected — dates preserved</p>
             )}
             <div className="overflow-auto max-h-48 mb-4">
               <table className="w-full text-sm">
@@ -683,7 +952,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
             {importPreview.length > 50 && <p className="text-xs text-gray-400 mb-2">Showing first 50 of {importPreview.length} rows</p>}
             <div className="flex gap-2">
               <button type="button" onClick={handleProcessImport} disabled={importing} className="btn-primary">
-                {importing ? "Processing…" : "Process Import"}
+                {importing ? `Importing ${importPreview.length} records…` : `Import ${importPreview.length} records`}
               </button>
               <button type="button" onClick={handleCancelImport} className="btn-secondary">
                 Cancel
@@ -786,7 +1055,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
           </div>
         </form>
         <p className="text-xs text-gray-400 mt-2">
-          Excel/CSV: AI extracts monitoring data. Supports Timestamp, HeartRate (BPM), BreathRate (RR), SpO2 (%), Temperature (°F), Systolic/Diastolic BP (mmHg), Movement (0 or 1). Use &quot;--&quot; for missing values.
+          Excel/CSV: Supports Timestamp, HeartRate (BPM), BreathRate (RR), SpO2 (%), Temperature (°F), Systolic/Diastolic BP (mmHg), Movement (0 or 1). Use &quot;--&quot; for missing values. Duplicate records (same datetime) are skipped.
         </p>
         </div>
         )}
@@ -798,8 +1067,8 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
           <Pill className="h-4 w-4" />
           Add treatment data
         </h4>
-        <form onSubmit={handleTreatmentSubmit} className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[180px]">
+        <form onSubmit={handleTreatmentSubmit} className="grid grid-cols-1 landscape:grid-cols-3 gap-3">
+          <div>
             <label className="block text-xs font-medium mb-1">Date & Time</label>
             <input
               type="datetime-local"
@@ -808,7 +1077,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               className="input-field w-full text-sm"
             />
           </div>
-          <div className="min-w-[200px] flex-1">
+          <div className="landscape:col-span-2">
             <label className="block text-xs font-medium mb-1">Treatment / Medicine</label>
             <input
               type="text"
@@ -824,7 +1093,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               ))}
             </datalist>
           </div>
-          <div className="min-w-[100px]">
+          <div>
             <label className="block text-xs font-medium mb-1">Quantity</label>
             <input
               type="text"
@@ -834,7 +1103,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               placeholder="e.g. 2 tabs"
             />
           </div>
-          <div className="min-w-[120px] flex-1">
+          <div>
             <label className="block text-xs font-medium mb-1">Notes</label>
             <input
               type="text"
@@ -844,7 +1113,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               placeholder="Optional"
             />
           </div>
-          <div className="min-w-[180px]">
+          <div>
             <label className="block text-xs font-medium mb-1">Doctor Name</label>
             <input
               type="text"
@@ -860,36 +1129,38 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               ))}
             </datalist>
           </div>
-          <button type="submit" disabled={savingTreatment || !treatmentForm.treatment_name?.trim()} className="btn-primary flex items-center gap-2 shrink-0">
-            <Plus className="h-4 w-4" />
-            {savingTreatment ? "Saving…" : "Add Treatment"}
-          </button>
+          <div className="flex items-end">
+            <button type="submit" disabled={savingTreatment || !treatmentForm.treatment_name?.trim()} className="btn-primary flex items-center gap-2 w-full justify-center">
+              <Plus className="h-4 w-4" />
+              {savingTreatment ? "Saving…" : "Add Treatment"}
+            </button>
+          </div>
         </form>
       </div>
 
       {/* Minimal From/To in one row (applies to all graphs) */}
       <div className="card p-4 ring-2 ring-rose-400/60 border-rose-400/50 bg-rose-500/10">
-        <div className="flex flex-wrap items-center gap-2 mb-2">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center gap-1.5 shrink-0">
-              <Calendar className="h-3.5 w-3.5 text-rose-400" aria-hidden />
+        <div className="space-y-2 mb-2">
+          <div className="flex flex-col gap-2 portrait:w-full">
+            <div className="flex items-center gap-1.5">
+              <Calendar className="h-3.5 w-3.5 text-rose-400 shrink-0" aria-hidden />
               <input
                 type="datetime-local"
                 value={startDateTime}
                 onChange={(e) => setStartDateTime(e.target.value)}
-                className="input-field text-xs py-1.5 px-2 w-[220px] min-w-[200px]"
+                className="input-field text-xs py-1.5 px-2 flex-1 min-w-0"
                 aria-label="From"
               />
-              <span className="text-gray-500 text-xs">–</span>
+              <span className="text-gray-500 text-xs shrink-0">–</span>
               <input
                 type="datetime-local"
                 value={endDateTime}
                 onChange={(e) => setEndDateTime(e.target.value)}
-                className="input-field text-xs py-1.5 px-2 w-[220px] min-w-[200px]"
+                className="input-field text-xs py-1.5 px-2 flex-1 min-w-0"
                 aria-label="To"
               />
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-1 flex-wrap">
               {TIME_RANGE_PRESETS.map((p) => {
                 const isActive = activePresetId === p.id;
                 return (
@@ -897,26 +1168,27 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                     key={p.id}
                     type="button"
                     onClick={() => applyTimePreset(p.days)}
-                    className={`rounded-md px-2 py-1 text-xs border transition ${isActive ? "bg-rose-500/25 text-rose-200 border-rose-400/50" : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 border-transparent"}`}
+                    className={`sub-tab rounded-md px-2 py-1 text-xs border transition ${isActive ? "sub-tab--active bg-rose-500/25 text-rose-200 border-rose-400/50" : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 border-transparent"}`}
                     title={`Last ${p.label}`}
                   >
                     {p.label}
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={handleLoadChartData}
+                disabled={loading}
+                className="rounded-md bg-rose-500/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-60 flex items-center gap-1.5 ml-auto"
+                title="Load chart data for the selected date range"
+              >
+                {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Load chart data
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={handleLoadChartData}
-              disabled={loading}
-              className="rounded-md bg-rose-500/80 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-500 disabled:opacity-60 flex items-center gap-1.5"
-              title="Load chart data for the selected date range"
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Load chart data
-            </button>
           </div>
-          <div className="flex items-center gap-1 ml-auto">
+          {/* Layout toggle – only in landscape */}
+          <div className="hidden landscape:flex items-center gap-1">
             <button
               type="button"
               onClick={() => setChartsPerRow(1)}
@@ -937,7 +1209,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
             </button>
           </div>
         </div>
-        <div className="text-xs text-rose-200/90 font-mono mt-1">
+        <div className="text-xs font-mono mt-1" style={{ color: 'var(--foreground-secondary)' }}>
           From: {formatDateRangeDisplay(toStartIso(startDateTime) || startDateTime)} — To: {formatDateRangeDisplay(toEndIso(endDateTime) || endDateTime)}
         </div>
 
@@ -946,17 +1218,28 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
         ) : chartData.length === 0 ? (
           <p className="text-sm text-gray-400 py-8 text-center">No monitoring data yet. Add readings manually or import from Excel.</p>
         ) : (
-          <div className={`grid gap-4 ${chartsPerRow === 1 ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
+          <div className={`grid gap-4 grid-cols-1 ${chartsPerRow === 2 ? "landscape:md:grid-cols-2" : ""}`}>
             {PARAM_KEYS.filter((paramKey) => paramKey !== "movement").map((paramKey) => {
               const dataKey = paramKey === "movement" ? "movement" : paramKey;
               const highVal = highLimits[paramKey] != null && !Number.isNaN(Number(highLimits[paramKey])) ? Number(highLimits[paramKey]) : null;
               const lowVal = lowLimits[paramKey] != null && !Number.isNaN(Number(lowLimits[paramKey])) ? Number(lowLimits[paramKey]) : null;
               const isMovement = paramKey === "movement";
 
+              const chartDataForParam =
+                chartDataOverride[paramKey] != null
+                  ? (chartDataOverride[paramKey].data || []).map((r: any) => ({
+                      ...r,
+                      time: formatTime(r.recorded_at),
+                      timestamp: new Date(r.recorded_at).getTime(),
+                    }))
+                  : chartData;
+              const treatmentsForParam = chartDataOverride[paramKey]?.treatments ?? treatments;
+              const nDataForParam = chartDataForParam.length;
+
               const range = getChartRange(paramKey);
-              const startIdx = Math.max(0, Math.floor((range.start / 100) * nData));
-              const endIdx = Math.min(nData, Math.ceil((range.end / 100) * nData));
-              const visibleFull = nData > 0 ? chartData.slice(startIdx, endIdx) : chartData;
+              const startIdx = Math.max(0, Math.floor((range.start / 100) * nDataForParam));
+              const endIdx = Math.min(nDataForParam, Math.ceil((range.end / 100) * nDataForParam));
+              const visibleFull = nDataForParam > 0 ? chartDataForParam.slice(startIdx, endIdx) : chartDataForParam;
               const visibleCount = visibleFull.length;
               const visibleData =
                 visibleCount <= MAX_POINTS_PER_CHART
@@ -970,7 +1253,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                       return out;
                     })();
 
-              const values = (chartData as any[])
+              const values = (chartDataForParam as any[])
                 .map((d) => d[dataKey])
                 .filter((v) => v != null && !Number.isNaN(Number(v)))
                 .map(Number);
@@ -993,37 +1276,106 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                 }
               }
 
-              const handleChartWheel = (e: WheelEvent) => {
-                e.stopPropagation();
-                const delta = e.deltaY > 0 ? 5 : -5;
+              const handleZoomIn = () => {
                 const center = (range.start + range.end) / 2;
                 const span = range.end - range.start;
-                const newSpan = Math.max(5, Math.min(100, span + delta));
+                const newSpan = Math.max(5, span - 8);
                 const half = newSpan / 2;
                 setChartRange(paramKey, Math.max(0, center - half), Math.min(100, center + half));
               };
 
-              const handlePointerDown = (e: React.PointerEvent) => {
-                // Don't capture when clicking treatment vertical lines so their onClick fires
-                const t = e.target as SVGElement;
-                const stroke = t?.getAttribute?.("stroke");
-                const isTreatmentLine = (t?.tagName === "path" || t?.tagName === "line") && (stroke === TREATMENT_LINE_UNSELECTED || stroke === TREATMENT_LINE_SELECTED);
-                if (isTreatmentLine) return;
-                panRef.current = { paramKey, startX: e.clientX, startStart: range.start, startEnd: range.end };
-                (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+              const handleZoomOut = () => {
+                const center = (range.start + range.end) / 2;
+                const span = range.end - range.start;
+                const newSpan = Math.min(100, span + 8);
+                const half = newSpan / 2;
+                setChartRange(paramKey, Math.max(0, center - half), Math.min(100, center + half));
               };
-              const handlePointerMove = (e: React.PointerEvent) => {
-                if (!panRef.current || panRef.current.paramKey !== paramKey) return;
-                const span = panRef.current.startEnd - panRef.current.startStart;
-                const deltaPx = e.clientX - panRef.current.startX;
-                const deltaPercent = (deltaPx / (typeof window !== "undefined" ? window.innerWidth : 400)) * 100;
-                const newStart = Math.max(0, Math.min(100 - span, panRef.current.startStart + deltaPercent));
-                setChartRange(paramKey, newStart, newStart + span);
-                panRef.current = { ...panRef.current, startX: e.clientX, startStart: newStart, startEnd: newStart + span };
+
+              const handlePanLeft = () => {
+                const span = range.end - range.start;
+                const step = Math.min(10, span * 0.2);
+                const newStart = Math.max(0, range.start - step);
+                const newEnd = Math.min(100, range.end - step);
+                setChartRange(paramKey, newStart, newEnd);
               };
-              const handlePointerUp = (e: React.PointerEvent) => {
-                if (panRef.current?.paramKey === paramKey) panRef.current = null;
-                (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);
+
+              const handlePanRight = () => {
+                const span = range.end - range.start;
+                const step = Math.min(10, span * 0.2);
+                const newStart = Math.max(0, range.start + step);
+                const newEnd = Math.min(100, range.end + step);
+                setChartRange(paramKey, newStart, newEnd);
+              };
+
+              const MARGIN_LEFT = 44;
+              const MARGIN_RIGHT = 64;
+              const MARGIN_TOP = 12;
+              const MARGIN_BOTTOM = 40;
+
+              const handleBoxSelectStart = (e: React.PointerEvent) => {
+                if (chartLoading[paramKey]) return;
+                const el = e.currentTarget as HTMLElement;
+                const rect = el.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                boxSelectPendingRef.current = { paramKey, startX: x, startY: y };
+                // Do NOT setPointerCapture here – it would steal pointer events from treatment line clicks.
+                // Capture only when user actually drags (see handleBoxSelectMove).
+              };
+
+              const handleBoxSelectMove = (e: React.PointerEvent) => {
+                const pending = boxSelectPendingRef.current;
+                if (pending?.paramKey !== paramKey) return;
+                const el = e.currentTarget as HTMLElement;
+                const rect = el.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const dx = Math.abs(x - pending.startX);
+                if (dx >= 5 && !boxSelect) {
+                  (el as any).setPointerCapture?.(e.pointerId);
+                  setBoxSelect({
+                    paramKey: pending.paramKey,
+                    startX: pending.startX,
+                    startY: pending.startY,
+                    currentX: x,
+                    currentY: y,
+                  });
+                } else if (boxSelect?.paramKey === paramKey) {
+                  setBoxSelect((prev) => (prev ? { ...prev, currentX: x, currentY: y } : null));
+                }
+              };
+
+              const handleBoxSelectEnd = (e: React.PointerEvent) => {
+                const pending = boxSelectPendingRef.current?.paramKey === paramKey ? boxSelectPendingRef.current : null;
+                const sel = boxSelect?.paramKey === paramKey ? boxSelect : null;
+                boxSelectPendingRef.current = null;
+                if (!sel && !pending) return;
+                const el = e.currentTarget as HTMLElement;
+                const rect = el.getBoundingClientRect();
+                (el as any).releasePointerCapture?.(e.pointerId);
+                const endX = e.clientX - rect.left;
+                const startX = sel ? sel.startX : (pending?.startX ?? endX);
+                const plotWidth = rect.width - MARGIN_LEFT - MARGIN_RIGHT;
+                const minSelWidth = 30;
+                const x1 = Math.min(startX, endX);
+                const x2 = Math.max(startX, endX);
+                if (x2 - x1 < minSelWidth) {
+                  setBoxSelect(null);
+                  return;
+                }
+                const relStart = Math.max(0, Math.min(1, (x1 - MARGIN_LEFT) / plotWidth));
+                const relEnd = Math.max(0, Math.min(1, (x2 - MARGIN_LEFT) / plotWidth));
+                const span = relEnd - relStart;
+                if (span < 0.02) {
+                  setBoxSelect(null);
+                  return;
+                }
+                const visSpan = range.end - range.start;
+                const newStart = range.start + relStart * visSpan;
+                const newEnd = range.start + relEnd * visSpan;
+                setChartRange(paramKey, newStart, newEnd);
+                setBoxSelect(null);
               };
 
               const effectiveWidth = chartContainerWidth > 0 ? chartContainerWidth : "100%";
@@ -1031,58 +1383,137 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
               const visibleMinT = visibleFull.length > 0 ? Math.min(...visibleFull.map((d: any) => d.timestamp)) : (toStartIso(startDateTime) ? new Date(toStartIso(startDateTime)!).getTime() : null);
               const visibleMaxT = visibleFull.length > 0 ? Math.max(...visibleFull.map((d: any) => d.timestamp)) : (toEndIso(endDateTime) ? new Date(toEndIso(endDateTime)!).getTime() : null);
               const treatmentsInRange = (visibleMinT != null && visibleMaxT != null)
-                ? treatments.filter((t) => {
+                ? treatmentsForParam.filter((t: any) => {
                     const ts = new Date(t.recorded_at).getTime();
                     return ts >= visibleMinT && ts <= visibleMaxT;
                   })
                 : treatments;
 
               return (
-                <div key={paramKey} className="rounded-lg border border-white/10 bg-gray-900/50 p-4">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <h5 className="text-sm font-semibold text-gray-100">
+                <div key={paramKey} className="rounded-lg border border-white/10 bg-gray-900/50 p-3 sm:p-4 monitor-chart-card">
+                  {/* Portrait: rotate hint */}
+                  <div className="portrait:block hidden text-center text-xs text-gray-400 mb-2 py-1 rounded bg-white/5 border border-white/10">
+                    Rotate phone to landscape for better graph visualization
+                  </div>
+                  <div className="mb-2 flex flex-col landscape:flex-row landscape:items-center landscape:justify-between gap-1">
+                    <div className="flex flex-col landscape:flex-row landscape:items-center gap-1 landscape:gap-3">
+                      <h5 className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
                         {paramKey === "movement" ? "Movement" : `${PARAM_LABELS[paramKey] || paramKey} vs Movement`}
                       </h5>
                       {treatmentsInRange.length > 0 && (
                         <span className="text-xs text-emerald-400/90 flex items-center gap-1">
-                          <Pill className="w-4 h-4" /> {treatmentsInRange.length} treatment event{treatmentsInRange.length !== 1 ? "s" : ""} — vertical lines on graph (click for details)
+                          <Pill className="w-3.5 h-3.5" /> {treatmentsInRange.length} treatment{treatmentsInRange.length !== 1 ? "s" : ""} — tap lines for details
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1" role="group" aria-label={`Time range for ${paramKey}`}>
-                      {TIME_RANGE_PRESETS.map((p) => (
+                    <div className="flex items-center gap-1 flex-wrap" role="group" aria-label={`Time range and zoom for ${paramKey}`}>
+                      {TIME_RANGE_PRESETS.map((p) => {
+                        const isChartPresetActive = chartSelectedPreset[paramKey] === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => applyPresetForChart(paramKey, p.days, p.id)}
+                            disabled={chartLoading[paramKey]}
+                            className={`rounded-md px-2.5 py-1.5 text-xs font-medium border transition ${
+                              isChartPresetActive
+                                ? "bg-rose-500/30 text-rose-200 border-rose-400/60"
+                                : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200 border-transparent hover:border-white/10"
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        );
+                      })}
+                      {chartDataOverride[paramKey] != null && (
                         <button
-                          key={p.id}
                           type="button"
-                          onClick={() => applyPresetForChart(paramKey, p.days)}
-                          className="rounded-md bg-white/5 px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:bg-white/10 hover:text-gray-200 border border-transparent hover:border-white/10 transition"
+                          onClick={() => {
+                            setChartDataOverride((prev) => {
+                              const next = { ...prev };
+                              delete next[paramKey];
+                              return next;
+                            });
+                            setChartRange(paramKey, 0, 100);
+                          }}
+                          className="rounded-md bg-white/5 px-2 py-1 text-xs text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                          title="Reset to global range"
+                          aria-label="Reset to global"
                         >
-                          {p.label}
+                          Reset
                         </button>
-                      ))}
+                      )}
+                      <span className="text-gray-500 mx-0.5">|</span>
+                      <button
+                        type="button"
+                        onClick={handleZoomIn}
+                        className="rounded-md bg-white/5 p-1.5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        title="Zoom in"
+                        aria-label="Zoom in"
+                      >
+                        <ZoomIn className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleZoomOut}
+                        className="rounded-md bg-white/5 p-1.5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        title="Zoom out"
+                        aria-label="Zoom out"
+                      >
+                        <ZoomOut className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePanLeft}
+                        className="rounded-md bg-white/5 p-1.5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        title="Pan left"
+                        aria-label="Pan left"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePanRight}
+                        className="rounded-md bg-white/5 p-1.5 text-gray-400 hover:bg-white/10 hover:text-gray-200"
+                        title="Pan right"
+                        aria-label="Pan right"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                   </div>
                   <div
                     ref={paramKey === PARAM_KEYS.filter((k) => k !== "movement")[0] ? chartContainerRef : undefined}
-                    className="overflow-x-auto overflow-y-hidden w-full"
+                    className="overflow-x-auto overflow-y-hidden w-full relative select-none"
                     style={{ minHeight: 180 }}
+                    onPointerDown={handleBoxSelectStart}
+                    onPointerMove={handleBoxSelectMove}
+                    onPointerUp={handleBoxSelectEnd}
+                    onPointerLeave={handleBoxSelectEnd}
                   >
-                  <ChartWheelZoom
-                    className="touch-none select-none w-full"
-                    style={{ touchAction: "none", cursor: "grab", minWidth: 320 }}
-                    onWheelZoom={handleChartWheel}
-                    onPointerDown={handlePointerDown}
-                    onPointerMove={handlePointerMove}
-                    onPointerUp={handlePointerUp}
-                    onPointerLeave={handlePointerUp}
-                  >
+                  {boxSelect?.paramKey === paramKey && (
+                    <div
+                      className="absolute pointer-events-none border-2 border-dashed border-rose-400 bg-rose-500/20 z-[5]"
+                      style={{
+                        left: Math.min(boxSelect.startX, boxSelect.currentX),
+                        top: 0,
+                        width: Math.abs(boxSelect.currentX - boxSelect.startX),
+                        height: 180,
+                      }}
+                    />
+                  )}
+                  {chartLoading[paramKey] && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900/60 z-10 rounded">
+                      <Loader2 className="h-6 w-6 animate-spin text-rose-400" />
+                    </div>
+                  )}
+                  <div className="w-full" style={{ minWidth: 320 }}>
                     {typeof effectiveWidth === "number" ? (
                       <LineChart
                         width={effectiveWidth}
                         height={180}
                         data={visibleData}
-                        margin={{ top: 12, right: 64, left: 44, bottom: 56 }}
+                        margin={{ top: 12, right: 64, left: 44, bottom: 40 }}
                       >
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false} />
                       <XAxis
@@ -1149,8 +1580,14 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                             yAxisId={isMovement ? "right" : "left"}
                             stroke={isSelected ? TREATMENT_LINE_SELECTED : TREATMENT_LINE_UNSELECTED}
                             strokeWidth={4}
-                            cursor="pointer"
-                            onClick={() => setSelectedTreatment((prev: any) => (prev?.id === t.id ? null : t))}
+                            shape={(props: any) => (
+                              <TreatmentLineShape
+                                {...props}
+                                treatment={t}
+                                isSelected={!!isSelected}
+                                onSelect={() => setSelectedTreatment((prev: any) => (prev?.id === t.id ? null : t))}
+                              />
+                            )}
                           />
                         );
                       })}
@@ -1162,7 +1599,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                         strokeWidth={1}
                         dot={{ fill: "#64748b", r: 0.5 }}
                         name="Movement"
-                        connectNulls
+                        connectNulls={false}
                       />
                       {!isMovement && (
                         <Line
@@ -1174,7 +1611,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                           dot={{ fill: "#e63946", r: 0.5 }}
                           activeDot={{ r: 2 }}
                           name={PARAM_LABELS[paramKey] || paramKey}
-                          connectNulls
+                          connectNulls={false}
                         />
                       )}
                     </LineChart>
@@ -1182,7 +1619,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                       <ResponsiveContainer width="100%" height={180}>
                         <LineChart
                           data={visibleData}
-                          margin={{ top: 12, right: 64, left: 44, bottom: 56 }}
+                          margin={{ top: 12, right: 64, left: 44, bottom: 40 }}
                         >
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" vertical={false} />
                       <XAxis
@@ -1249,8 +1686,14 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                             yAxisId={isMovement ? "right" : "left"}
                             stroke={isSelected ? TREATMENT_LINE_SELECTED : TREATMENT_LINE_UNSELECTED}
                             strokeWidth={4}
-                            cursor="pointer"
-                            onClick={() => setSelectedTreatment((prev: any) => (prev?.id === t.id ? null : t))}
+                            shape={(props: any) => (
+                              <TreatmentLineShape
+                                {...props}
+                                treatment={t}
+                                isSelected={!!isSelected}
+                                onSelect={() => setSelectedTreatment((prev: any) => (prev?.id === t.id ? null : t))}
+                              />
+                            )}
                           />
                         );
                       })}
@@ -1262,7 +1705,7 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                         strokeWidth={1}
                         dot={{ fill: "#64748b", r: 0.5 }}
                         name="Movement"
-                        connectNulls
+                        connectNulls={false}
                       />
                       {!isMovement && (
                         <Line
@@ -1274,23 +1717,23 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
                           dot={{ fill: "#e63946", r: 0.5 }}
                           activeDot={{ r: 2 }}
                           name={PARAM_LABELS[paramKey] || paramKey}
-                          connectNulls
+                          connectNulls={false}
                         />
                       )}
                         </LineChart>
                       </ResponsiveContainer>
                     )}
-                  </ChartWheelZoom>
+                  </div>
                   </div>
                   {/* Selected treatment one-line summary: below graph, when a vertical line is clicked */}
                   {selectedTreatment && (
-                    <p className="mt-2 text-sm font-medium" style={{ color: TREATMENT_LINE_SELECTED }}>
+                    <p className="mt-1 text-sm font-medium" style={{ color: TREATMENT_LINE_SELECTED }}>
                       {formatTreatmentSummary(selectedTreatment)}
                     </p>
                   )}
-                  <p className="mt-1.5 text-xs text-gray-500">
+                  <p className={`text-xs ${selectedTreatment ? "mt-0.5" : "mt-1.5"}`} style={{ color: 'var(--muted)' }}>
                     {visibleCount > MAX_POINTS_PER_CHART ? `Showing ${MAX_POINTS_PER_CHART} of ${visibleCount} points — scroll to see more. ` : ""}
-                    Wheel to zoom; drag to pan.
+                    Use +/− to zoom; arrows to pan; drag to select area and zoom.
                   </p>
                 </div>
               );
@@ -1299,9 +1742,225 @@ const AdmissionMonitorView: React.FC<AdmissionMonitorViewProps> = ({
         )}
       </div>
 
+      {/* Raw data table */}
+      <div className="card p-4">
+        <h4 className="font-semibold flex items-center gap-2 mb-4">
+          <Table2 className="h-4 w-4" />
+          Raw data
+        </h4>
+        {rawDataItems.length === 0 ? (
+          <p className="text-sm text-gray-400 py-4">No records. Load chart data or add readings.</p>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(e.target.value as 10 | 50 | 100 | "all")}
+                  className="input-field text-sm py-1.5 px-2 w-auto"
+                >
+                  <option value={10}>10</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Treatment:</span>
+                <select
+                  value={selectedTreatmentForScroll || ""}
+                  onChange={(e) => setSelectedTreatmentForScroll(e.target.value || null)}
+                  className="input-field text-sm py-1.5 px-2 min-w-[200px] max-w-[320px]"
+                >
+                  <option value="">— Select to scroll —</option>
+                  {sortedTreatmentsForDropdown.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {formatTime(t.recorded_at)} — {formatTreatmentDetails(t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDeleteSelected}
+                  disabled={deleting || selectedIds.size === 0}
+                  className="btn-secondary flex items-center gap-1.5 text-sm py-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete selected ({selectedIds.size})
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAll}
+                  disabled={deleting}
+                  className="btn-secondary flex items-center gap-1.5 text-sm py-1.5 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete all
+                </button>
+              </div>
+            </div>
+            {/* Landscape: table view */}
+            <div className="hidden landscape:block rounded-lg border border-white/10 overflow-hidden">
+              <div ref={rawDataScrollRef} className="overflow-auto max-h-[400px]">
+                <table className="vitals-table w-full text-sm">
+                  <thead ref={rawDataHeaderRef} className="sticky top-0 bg-gray-900/95 z-10 border-b border-white/10">
+                    <tr>
+                      <th className="text-left p-2 w-8">
+                        <input
+                          type="checkbox"
+                          checked={
+                            paginatedReadings.slice.filter((r) => r.type === "reading").length > 0 &&
+                            paginatedReadings.slice
+                              .filter((r) => r.type === "reading" && r.id)
+                              .every((r) => selectedIds.has(String(r.id)))
+                          }
+                          onChange={toggleSelectAll}
+                          aria-label="Select all readings on page"
+                          className="rounded"
+                        />
+                      </th>
+                      <th className="text-left p-2 font-medium">Date / Time</th>
+                      <th className="text-left p-2 font-medium">HR</th>
+                      <th className="text-left p-2 font-medium">RR</th>
+                      <th className="text-left p-2 font-medium">SpO2</th>
+                      <th className="text-left p-2 font-medium">Temp</th>
+                      <th className="text-left p-2 font-medium">Syst</th>
+                      <th className="text-left p-2 font-medium">Diast</th>
+                      <th className="text-left p-2 font-medium">Mov</th>
+                      <th className="text-left p-2 font-medium min-w-[180px]">Treatment</th>
+                      <th className="text-left p-2 w-12 font-medium">Del</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedReadings.slice.map((row) => {
+                      const isTreatment = row.type === "treatment";
+                      const key = isTreatment ? `t-${row.id}` : `r-${row.id}`;
+                      return (
+                        <tr
+                          key={key}
+                          data-treatment-id={isTreatment ? `t-${row.id}` : undefined}
+                          className={`border-b border-white/5 hover:bg-white/5 ${isTreatment ? "bg-emerald-500/5" : ""}`}
+                        >
+                          <td className="p-2">
+                            {!isTreatment && row.id && (
+                              <input type="checkbox" checked={selectedIds.has(String(row.id))} onChange={() => toggleSelect(String(row.id))} aria-label={`Select row ${row.id}`} className="rounded" />
+                            )}
+                          </td>
+                          <td className="p-2 text-gray-400 whitespace-nowrap">{formatTime(row.recorded_at)}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.heart_rate ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.breath_rate ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.spo2 ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.temperature ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.systolic_bp ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.diastolic_bp ?? "—")}</td>
+                          <td className="p-2">{isTreatment ? "—" : (row.movement ?? "—")}</td>
+                          <td className="p-2 text-emerald-200/90">{isTreatment ? formatTreatmentDetails(row) : "—"}</td>
+                          <td className="p-2">
+                            {!isTreatment && row.id && (
+                              <button type="button" onClick={() => handleDeleteOne(String(row.id))} disabled={deleting} className="p-1 rounded text-red-400 hover:bg-red-500/20 disabled:opacity-50" title="Delete this record" aria-label="Delete record"><Trash2 className="h-3.5 w-3.5" /></button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Portrait: card view */}
+            <div className="landscape:hidden space-y-2 max-h-[500px] overflow-y-auto">
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="checkbox"
+                  checked={
+                    paginatedReadings.slice.filter((r) => r.type === "reading").length > 0 &&
+                    paginatedReadings.slice.filter((r) => r.type === "reading" && r.id).every((r) => selectedIds.has(String(r.id)))
+                  }
+                  onChange={toggleSelectAll}
+                  aria-label="Select all"
+                  className="rounded"
+                />
+                <span className="text-xs text-gray-400">Select all</span>
+              </div>
+              {paginatedReadings.slice.map((row) => {
+                const isTreatment = row.type === "treatment";
+                const key = isTreatment ? `t-${row.id}` : `r-${row.id}`;
+                return (
+                  <div
+                    key={key}
+                    data-treatment-id={isTreatment ? `t-${row.id}` : undefined}
+                    className={`rounded-lg border p-3 today-list-item ${isTreatment ? "border-emerald-400/30 bg-emerald-500/5" : "border-white/10 bg-white/5"}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {!isTreatment && row.id && (
+                        <input type="checkbox" checked={selectedIds.has(String(row.id))} onChange={() => toggleSelect(String(row.id))} className="rounded mt-0.5 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-xs text-gray-400">{formatTime(row.recorded_at)}</span>
+                          {!isTreatment && row.id && (
+                            <button type="button" onClick={() => handleDeleteOne(String(row.id))} disabled={deleting} className="p-1 rounded text-red-400 hover:bg-red-500/20 disabled:opacity-50 shrink-0" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )}
+                        </div>
+                        {isTreatment ? (
+                          <p className="text-sm text-emerald-300 font-medium">{formatTreatmentDetails(row)}</p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-x-3 gap-y-1 text-xs">
+                            <div><span className="text-gray-400">HR</span> <span className="font-medium">{row.heart_rate ?? "—"}</span></div>
+                            <div><span className="text-gray-400">RR</span> <span className="font-medium">{row.breath_rate ?? "—"}</span></div>
+                            <div><span className="text-gray-400">SpO2</span> <span className="font-medium">{row.spo2 ?? "—"}</span></div>
+                            <div><span className="text-gray-400">Temp</span> <span className="font-medium">{row.temperature ?? "—"}</span></div>
+                            <div><span className="text-gray-400">Syst</span> <span className="font-medium">{row.systolic_bp ?? "—"}</span></div>
+                            <div><span className="text-gray-400">Diast</span> <span className="font-medium">{row.diastolic_bp ?? "—"}</span></div>
+                            <div><span className="text-gray-400">Mov</span> <span className="font-medium">{row.movement ?? "—"}</span></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {pageSize !== "all" && paginatedReadings.totalPages > 1 && (
+              <div className="flex items-center justify-between gap-4 mt-3">
+                <p className="text-xs text-gray-400">
+                  Showing {(paginatedReadings.page - 1) * (pageSize as number) + 1}–
+                  {Math.min(paginatedReadings.page * (pageSize as number), paginatedReadings.total)} of {paginatedReadings.total}
+                </p>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={paginatedReadings.page <= 1}
+                    className="btn-secondary text-sm py-1 px-2 disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-gray-400 px-2">
+                    Page {paginatedReadings.page} / {paginatedReadings.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(paginatedReadings.totalPages, p + 1))}
+                    disabled={paginatedReadings.page >= paginatedReadings.totalPages}
+                    className="btn-secondary text-sm py-1 px-2 disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {importing &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[10000] flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-4 p-8 rounded-xl bg-gray-900/95 border border-white/10">
               <Loader2 className="h-12 w-12 text-rose-400 animate-spin" />
               <p className="text-lg font-medium text-white">

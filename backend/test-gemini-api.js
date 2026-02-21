@@ -6,7 +6,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXyFZy83Xe2i3pJjP2sK444xmQ4uwkjZg';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 console.log('════════════════════════════════════════════════════════════════');
 console.log('🔍 Step-by-Step Gemini API Verification');
@@ -18,7 +18,7 @@ console.log('📋 STEP 1: Verifying Gemini API Key');
 console.log('────────────────────────────────────────────────────────────────');
 if (!GEMINI_API_KEY || GEMINI_API_KEY === '') {
   console.error('❌ ERROR: GEMINI_API_KEY is not configured!');
-  console.error('   Please set GEMINI_API_KEY in your environment variables or .env file');
+  console.error('   Set it in .env.integrated or: export GEMINI_API_KEY=$(gcloud secrets versions access latest --secret=GEMINI_API_KEY --project=platforms-476017)');
   process.exit(1);
 }
 

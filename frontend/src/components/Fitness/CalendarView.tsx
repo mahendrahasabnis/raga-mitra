@@ -523,7 +523,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
           </button>
         </div>
 
-        <div className="mt-2 mb-3 text-xs text-gray-400 text-center">
+        <div className="mt-2 mb-3 text-xs text-gray-400 text-center calendar-summary-bar">
           <span className="text-gray-200">
             {(() => {
               const currentLabel = formatWeekLabel(getWeekEnd(currentDate));
@@ -547,7 +547,7 @@ const CalendarView: React.FC<CalendarViewProps> = ({
             return (
               <div
                 key={getLocalDateKey(date)}
-                className={`p-3 rounded-lg border min-w-[120px] md:min-w-0 min-h-[220px] ${
+                className={`calendar-day-card p-3 rounded-lg border min-w-[120px] md:min-w-0 min-h-[220px] ${
                   isToday ? "border-blue-400 bg-blue-500/10" : "border-white/10 bg-white/5"
                 } hover:bg-white/10 transition cursor-pointer`}
                 onClick={() => navigateToDate(date, entry?.sessions?.[0]?.id)}

@@ -92,6 +92,10 @@ app.use(cors({
     if (origin.endsWith('.run.app') && origin.includes('aarogya-mitra-frontend')) {
       return callback(null, true);
     }
+    // Allow custom domain aarogyamitra.99platforms.com
+    if (origin === 'https://aarogyamitra.99platforms.com' || origin === 'http://aarogyamitra.99platforms.com') {
+      return callback(null, true);
+    }
     // Check against configured origins
     if (corsOrigins.includes(origin)) {
       return callback(null, true);

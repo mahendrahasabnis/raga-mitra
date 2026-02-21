@@ -5,7 +5,13 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyAXyFZy83Xe2i3pJjP2sK444xmQ4uwkjZg';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+
+if (!GEMINI_API_KEY) {
+  console.error('❌ GEMINI_API_KEY is not set. Set it in .env or:');
+  console.error('   export GEMINI_API_KEY=$(gcloud secrets versions access latest --secret=GEMINI_API_KEY --project=platforms-476017)');
+  process.exit(1);
+}
 
 console.log('════════════════════════════════════════════════════════════════');
 console.log('🔍 Comprehensive Gemini API Diagnosis');

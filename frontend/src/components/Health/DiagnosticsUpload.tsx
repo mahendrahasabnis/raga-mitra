@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Upload, FileText, CheckCircle2 } from "lucide-react";
 import { healthApi } from "../../services/api";
 
@@ -123,8 +124,8 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
       : reportDetails?.extraction;
   const reportVitals = resolvedExtraction?.vitals || [];
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
       <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Add Diagnostic Test</h2>
@@ -325,7 +326,7 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
         </form>
 
         {showReportDetails && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/60 z-[10001] flex items-center justify-center p-4">
             <div className="card max-w-lg w-full">
               <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
                 <h3 className="text-lg font-semibold">Report Details</h3>
@@ -385,7 +386,8 @@ const DiagnosticsUpload: React.FC<DiagnosticsUploadProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

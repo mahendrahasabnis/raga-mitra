@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Upload, FileText, Image as ImageIcon, Download, Save } from 'lucide-react';
 import { medicalHistoryApi } from '../../services/api';
 import SelectDropdown from '../UI/SelectDropdown';
@@ -258,9 +259,9 @@ const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
     }
   };
 
-  return (
+  return createPortal(
     <div 
-      className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black bg-opacity-50 z-[10000] flex items-center justify-center p-4"
       onClick={handleBackdropClick}
     >
       <div className="bg-white rounded-lg max-w-2xl w-full">
@@ -473,7 +474,8 @@ const UploadDocumentModal: React.FC<UploadDocumentModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

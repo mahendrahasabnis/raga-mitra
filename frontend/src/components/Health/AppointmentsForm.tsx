@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, MapPin, FileText, Upload } from "lucide-react";
 import { healthApi, userApi } from "../../services/api";
 import SelectDropdown from "../UI/SelectDropdown";
@@ -219,11 +220,11 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4">
       <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-[var(--panel)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold">
+          <h2 className="text-xl font-semibold text-[var(--foreground)]">
             {appointment ? "Edit Appointment" : "New Appointment"}
           </h2>
           <button
@@ -459,7 +460,8 @@ const AppointmentsForm: React.FC<AppointmentsFormProps> = ({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

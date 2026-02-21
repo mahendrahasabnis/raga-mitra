@@ -148,7 +148,9 @@ export const extractDocumentDataOnly = async (req: AuthRequest, res: Response) =
     const {
       file_url,
       file_base64,
-      file_type
+      file_type,
+      patient_sex,
+      patient_age,
     } = req.body;
 
     if (!file_url && !file_base64) {
@@ -188,9 +190,10 @@ export const extractDocumentDataOnly = async (req: AuthRequest, res: Response) =
     }
 
     if (legacy.document_type === 'test_result') {
+      const patientCtx = { sex: patient_sex, age: patient_age };
       const extracted = file_base64
-        ? await extractTestResultDataFromBase64(file_base64, file_type || 'image/jpeg')
-        : await extractTestResultData(file_url, file_type || 'image/jpeg');
+        ? await extractTestResultDataFromBase64(file_base64, file_type || 'image/jpeg', patientCtx)
+        : await extractTestResultData(file_url, file_type || 'image/jpeg', patientCtx);
       return res.status(200).json({
         document_type,
         document_type_label,
