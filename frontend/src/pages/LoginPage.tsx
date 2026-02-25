@@ -31,6 +31,7 @@ const LoginPage: React.FC = () => {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [firebaseIdToken, setFirebaseIdToken] = useState<string | null>(null);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
   const [registrationData, setRegistrationData] = useState<any>(null);
   const [userLookupResult, setUserLookupResult] = useState<{name?: string; roles?: string[]} | null>(null);
@@ -202,15 +203,11 @@ const LoginPage: React.FC = () => {
       console.log('🔥 [LOGIN STEP 2] OTP verification result:', result);
       
       if (result.success) {
+        setFirebaseIdToken((result as { idToken?: string }).idToken || null);
         setIsOtpVerified(true);
         setSuccess('OTP verified successfully!');
-        
-        // If it's registration, proceed to registration
         if (currentStep === 'register') {
           setRegistrationData({ phone: selectedCountry.code + phone, otpVerified: true });
-        } else {
-          // For login, proceed with PIN verification
-          setCurrentStep('login');
         }
       } else {
         setError(result.message || 'Invalid OTP');
@@ -296,7 +293,14 @@ const LoginPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('❌ [REGISTRATION STEP 3] Registration failed:', err);
-      setError(err.response?.data?.message || err.message || 'Registration failed');
+      const errMsg = err.response?.data?.message || err.message || '';
+      // If phone already exists, switch to Reset PIN with helpful message
+      if (/already (registered|exists|in use)/i.test(errMsg) || /phone.*exist/i.test(errMsg)) {
+        setCurrentStep('reset');
+        setError('User already registered. Please use Reset PIN to set a new password.');
+      } else {
+        setError(errMsg || 'Registration failed');
+      }
     } finally {
       setLoading(false);
     }
@@ -320,7 +324,7 @@ const LoginPage: React.FC = () => {
       const fullPhoneNumber = selectedCountry.code + phone;
       console.log('🔥 [RESET PIN] Resetting PIN for phone:', fullPhoneNumber);
       
-      const result = await authApi.resetPin(fullPhoneNumber, otp, pin);
+      const result = await authApi.resetPin(fullPhoneNumber, otp, pin, firebaseIdToken || undefined);
       console.log('🔥 [RESET PIN] Reset successful:', result);
       
       setSuccess('PIN reset successful! Please login with your new PIN.');
@@ -342,25 +346,25 @@ const LoginPage: React.FC = () => {
     setConfirmPin('');
     setOtp('');
     setOtpSent(false);
+    setFirebaseIdToken(null);
     setIsOtpVerified(false);
-    // setVerificationId(null);
+    setConfirmationResult(null);
     setRegistrationData(null);
     setError(null);
     setSuccess(null);
-    // Reset to login by default
     setCurrentStep('login');
   };
 
   const handleStepChange = (step: 'login' | 'register' | 'reset') => {
     setCurrentStep(step);
-    // Only reset form state, not the step
     setPhone('');
     setPin('');
     setConfirmPin('');
     setOtp('');
     setOtpSent(false);
+    setFirebaseIdToken(null);
     setIsOtpVerified(false);
-    // setVerificationId(null);
+    setConfirmationResult(null);
     setRegistrationData(null);
     setError(null);
     setSuccess(null);
@@ -707,14 +711,20 @@ const LoginPage: React.FC = () => {
                       {isLookingUpUser ? (
                         <p className={`text-xs ${theme === 'light' ? 'text-slate-500' : 'text-gray-300'}`}>Searching...</p>
                       ) : userLookupResult ? (
-                        <div className={`text-xs space-y-1 ${theme === 'light' ? 'text-slate-700' : 'text-gray-200'}`}>
-                          <p className="font-semibold">Name: {userLookupResult.name}</p>
-                          {userLookupResult.roles && userLookupResult.roles.length > 0 && (
-                            <p className={`${theme === 'light' ? 'text-rose-700' : 'text-rose-200'} font-semibold`}>
-                              Role(s): {userLookupResult.roles.join(', ')}
-                            </p>
-                          )}
-                        </div>
+                        currentStep === 'register' ? (
+                          <p className={`text-sm font-medium ${theme === 'light' ? 'text-amber-700' : 'text-amber-300'}`}>
+                            User already registered.
+                          </p>
+                        ) : (
+                          <div className={`text-xs space-y-1 ${theme === 'light' ? 'text-slate-700' : 'text-gray-200'}`}>
+                            <p className="font-semibold">Name: {userLookupResult.name}</p>
+                            {userLookupResult.roles && userLookupResult.roles.length > 0 && (
+                              <p className={`${theme === 'light' ? 'text-rose-700' : 'text-rose-200'} font-semibold`}>
+                                Role(s): {userLookupResult.roles.join(', ')}
+                              </p>
+                            )}
+                          </div>
+                        )
                       ) : phone.length === selectedCountry.maxLength ? (
                         <p className="text-xs text-red-600">Pl. register yourself</p>
                       ) : null}
@@ -823,7 +833,7 @@ const LoginPage: React.FC = () => {
 
                 <button
                   onClick={currentStep === 'login' ? handleLogin : handleSendOtp}
-                  disabled={loading || phone.length < selectedCountry.maxLength || (currentStep === 'login' && !pin)}
+                  disabled={loading || phone.length < selectedCountry.maxLength || (currentStep === 'login' && !pin) || (currentStep === 'register' && !!userLookupResult)}
                   className="w-full bg-gradient-to-r from-blue-600 to-teal-600 text-white py-3 px-6 rounded-lg hover:from-blue-700 hover:to-teal-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
                 >
                   {loading ? (

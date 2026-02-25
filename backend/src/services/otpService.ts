@@ -1,5 +1,3 @@
-import { SmsClient as AzureSmsClient } from '@azure/communication-sms';
-
 class OTPService {
   private smsClient: any | null = null;
   private otpStore: Map<string, { otp: string; expiresAt: Date }> = new Map();
@@ -7,7 +5,13 @@ class OTPService {
   constructor() {
     const connectionString = process.env.AZURE_COMMUNICATION_CONNECTION_STRING;
     if (connectionString) {
-      this.smsClient = new (AzureSmsClient as any)(connectionString);
+      try {
+        // @ts-ignore - optional dep; not in package.json for local dev
+        const { SmsClient } = require('@azure/communication-sms');
+        this.smsClient = new SmsClient(connectionString);
+      } catch {
+        console.warn('[OTP] @azure/communication-sms not installed; OTP will log to console');
+      }
     }
   }
 

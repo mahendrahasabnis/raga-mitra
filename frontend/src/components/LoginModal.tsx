@@ -736,17 +736,11 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             const errorMessage = regErr.response.data?.message || '';
             
             if (errorMessage.includes('User already exists with this phone number') || errorMessage.includes('User already exists')) {
-              setError('❌ Phone number already registered. Please login instead.');
-              // Reset the form to login mode
-              setTimeout(() => {
-                setIsSignup(false);
-                setRegistrationStep('phone');
-                setOtpVerified(false);
-                setShowOtp(false);
-                setOtp('');
-                setPin(['', '', '', '']);
-                setError('');
-              }, 3000);
+              setError('User already registered. Please use Reset PIN to set a new password.');
+              // Switch to Forgot PIN / Reset flow (keep phone, OTP state so user can set new PIN)
+              setIsSignup(false);
+              setShowForgotPin(true);
+              setRequiresOTP(true);
             } else if (errorMessage.includes('Invalid or expired OTP')) {
               setError('❌ Invalid or expired OTP. Please try again.');
             } else if (errorMessage.includes('PIN must be exactly 4 digits')) {
@@ -989,12 +983,16 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
                   {isLookingUpUser ? (
                     <p className="text-xs text-white/60">Searching...</p>
                   ) : userLookupResult ? (
-                    <div className="text-xs text-white/80">
-                      <p className="font-medium">Name: {userLookupResult.name}</p>
-                      {userLookupResult.roles && userLookupResult.roles.length > 0 && (
-                        <p className="text-white/60">Roles: {userLookupResult.roles.join(', ')}</p>
-                      )}
-                    </div>
+                    isSignup ? (
+                      <p className="text-sm font-medium text-amber-300">User already registered.</p>
+                    ) : (
+                      <div className="text-xs text-white/80">
+                        <p className="font-medium">Name: {userLookupResult.name}</p>
+                        {userLookupResult.roles && userLookupResult.roles.length > 0 && (
+                          <p className="text-white/60">Roles: {userLookupResult.roles.join(', ')}</p>
+                        )}
+                      </div>
+                    )
                   ) : phone.length === selectedCountry.maxLength ? (
                     <p className="text-xs text-red-300">Pl. register yourself</p>
                   ) : null}
@@ -1070,7 +1068,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
 
             <button
               type="submit"
-              disabled={loading || (isSignup && registrationStep === 'otp')}
+              disabled={loading || (isSignup && registrationStep === 'otp') || (isSignup && registrationStep === 'phone' && !!userLookupResult)}
               className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Please wait...' : 

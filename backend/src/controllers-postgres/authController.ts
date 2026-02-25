@@ -496,3 +496,64 @@ export const logout = async (req: Request, res: Response) => {
   res.json({ message: 'Logout successful' });
 };
 
+// Reset PIN - accepts either (phone, otp, newPin) for backend OTP, or (phone, idToken, newPin) for Firebase OTP
+export const resetPin = async (req: Request, res: Response) => {
+  try {
+    const { phone, otp, newPin, idToken } = req.body;
+
+    if (!phone || !newPin) {
+      return res.status(400).json({ message: 'Phone and new PIN are required' });
+    }
+
+    if (newPin.length < 4 || newPin.length > 6) {
+      return res.status(400).json({ message: 'PIN must be 4-6 digits' });
+    }
+
+    let verified = false;
+
+    if (idToken) {
+      // Firebase-verified: verify ID token via Firebase REST API
+      const apiKey = process.env.FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || 'AIzaSyDTVjV7AIw_RxxHwl-3tLWFUwEc_FrSHLo';
+      const resp = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken })
+      });
+      const data = (await resp.json()) as { users?: Array<{ phoneNumber?: string }> };
+      if (data.users?.[0]) {
+        const tokenPhone = (data.users[0].phoneNumber || '').replace(/\s/g, '');
+        if (tokenPhone && tokenPhone === phone.replace(/\s/g, '')) {
+          verified = true;
+        }
+      }
+    }
+
+    if (!verified && otp) {
+      const otpService = (await import('../services/otpService')).default;
+      verified = otpService.verifyOTP(phone, otp);
+    }
+
+    if (!verified) {
+      return res.status(400).json({ message: 'Invalid or expired OTP. Please request a new OTP.' });
+    }
+
+    const { sharedSequelize } = await import('../config/database-integrated');
+    const pinHash = await bcrypt.hash(newPin, 10);
+
+    const [rows]: any = await sharedSequelize.query(
+      `UPDATE users SET pin_hash = :pinHash, updated_at = NOW() WHERE phone = :phone RETURNING id`,
+      { replacements: { pinHash, phone } }
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    console.log(`✅ [RESET PIN] PIN reset for ${phone}`);
+    res.json({ message: 'PIN reset successfully' });
+  } catch (error: any) {
+    console.error('❌ [RESET PIN] Error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+

@@ -123,8 +123,8 @@ export const authApi = {
     return response.data;
   },
 
-  resetPin: async (phone: string, otp: string, newPin: string) => {
-    const response = await api.post('/auth/reset-pin', { phone, otp, newPin });
+  resetPin: async (phone: string, otp: string, newPin: string, idToken?: string) => {
+    const response = await api.post('/auth/reset-pin', { phone, otp, newPin, idToken });
     return response.data;
   },
 };

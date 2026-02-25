@@ -176,11 +176,19 @@ class ElegantFirebasePhoneAuthService {
       if (error.code === 'auth/invalid-phone-number') {
         errorMessage = 'Invalid phone number format.';
       } else if (error.code === 'auth/too-many-requests') {
-        errorMessage = 'Too many requests. Please try again later.';
+        errorMessage = 'Too many OTP requests. Please wait 5–10 minutes before trying again.';
       } else if (error.code === 'auth/captcha-check-failed') {
         errorMessage = 'reCAPTCHA verification failed. Please try again.';
+      } else if (error.code === 'auth/invalid-app-credential') {
+        errorMessage = 'App not authorized for Phone Auth. Add this domain (e.g. localhost) to Firebase Console → Authentication → Authorized domains.';
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Check your connection or try again.';
+      } else if (error.code === 'auth/api-key-not-valid') {
+        errorMessage = 'Invalid Firebase API key. Check your environment configuration.';
       } else if (error.code === 'auth/quota-exceeded') {
         errorMessage = 'SMS quota exceeded. Please try again later.';
+      } else if (error?.message) {
+        errorMessage = error.message;
       }
       
       return { success: false, message: errorMessage };
@@ -190,16 +198,18 @@ class ElegantFirebasePhoneAuthService {
   /**
    * Verify OTP with elegant error handling
    */
-  async verifyOTP(confirmationResult: ConfirmationResult, otp: string): Promise<{ success: boolean; message: string }> {
+  async verifyOTP(confirmationResult: ConfirmationResult, otp: string): Promise<{ success: boolean; message: string; idToken?: string }> {
     try {
       console.log('🔐 [ELEGANT FIREBASE AUTH] Verifying OTP');
       
-      await confirmationResult.confirm(otp);
+      const credential = await confirmationResult.confirm(otp);
+      const idToken = credential?.user ? await credential.user.getIdToken() : undefined;
       console.log('✅ [ELEGANT FIREBASE AUTH] OTP verified successfully!');
       
       return { 
         success: true, 
-        message: 'OTP verified successfully!' 
+        message: 'OTP verified successfully!',
+        idToken 
       };
       
     } catch (error: any) {

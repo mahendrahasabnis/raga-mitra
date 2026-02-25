@@ -2,15 +2,19 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
 
+// Treat placeholder values as unset so fallbacks apply
+const env = (v: string | undefined, fallback: string) =>
+  (v && !/^your-|^<|placeholder|example\.com/i.test(v)) ? v : fallback;
+
 // Firebase configuration from environment variables or fallback
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDTVjV7AIw_RxxHwl-3tLWFUwEc_FrSHLo",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "aarogya-mitra.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "aarogya-mitra",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "aarogya-mitra.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "873534819669",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:873534819669:web:84126eeb20ffd89da9b3dc",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-G6ZK4YS08V"
+  apiKey: env(import.meta.env.VITE_FIREBASE_API_KEY, "AIzaSyDTVjV7AIw_RxxHwl-3tLWFUwEc_FrSHLo"),
+  authDomain: env(import.meta.env.VITE_FIREBASE_AUTH_DOMAIN, "aarogya-mitra.firebaseapp.com"),
+  projectId: env(import.meta.env.VITE_FIREBASE_PROJECT_ID, "aarogya-mitra"),
+  storageBucket: env(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET, "aarogya-mitra.firebasestorage.app"),
+  messagingSenderId: env(import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID, "873534819669"),
+  appId: env(import.meta.env.VITE_FIREBASE_APP_ID, "1:873534819669:web:84126eeb20ffd89da9b3dc"),
+  measurementId: env(import.meta.env.VITE_FIREBASE_MEASUREMENT_ID, "G-G6ZK4YS08V")
 };
 
 // Initialize Firebase
