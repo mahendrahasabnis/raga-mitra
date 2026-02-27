@@ -78,8 +78,13 @@
     overflow: hidden;
   }
 
+  html {
+    background-color: var(--canvas);
+  }
+
   body {
     background: linear-gradient(135deg, var(--canvas-gradient-start), var(--canvas-gradient-end));
+    background-color: var(--canvas);
     color: var(--foreground);
     position: relative;
     overscroll-behavior: none;
