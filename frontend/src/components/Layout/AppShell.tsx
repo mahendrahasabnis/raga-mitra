@@ -213,8 +213,8 @@ const AppShell: React.FC<Props> = ({ children }) => {
     : "text-foreground";
 
   return (
-    <div className={`min-h-screen ${shellBg} flex flex-col`}>
-      <header className={`sticky top-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    <div className={`h-full ${shellBg} flex flex-col overflow-hidden`}>
+      <header className={`flex-shrink-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div className="safe-area px-4 py-3 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex flex-col gap-0.5">
@@ -439,13 +439,11 @@ const AppShell: React.FC<Props> = ({ children }) => {
         </div>
       )}
 
-      <main className="flex-1 flex flex-col min-h-0 px-4 pt-4" style={{ paddingBottom: 'calc(7.5rem + env(safe-area-inset-bottom, 0px))' }}>
-        <div className="flex-1 overflow-y-auto min-h-0">
-          <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
-        </div>
+      <main className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+      <div className="flex-shrink-0 z-30">
         <nav className={`backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)' }}>
           <div className="safe-area">
             <div className="flex justify-center">

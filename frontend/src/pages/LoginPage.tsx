@@ -496,11 +496,11 @@ const LoginPage: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${
+    <div className={`h-full overflow-y-auto flex items-center justify-center p-4 ${
       theme === 'light'
         ? 'bg-gradient-to-b from-[#fef7f0] via-[#fdeee5] to-[#fde8d8]'
         : 'bg-[#0a0a0f]'
-    }`}>
+    }`} style={{ WebkitOverflowScrolling: 'touch' }}>
       <div className="max-w-4xl w-full">
         <div className="flex justify-end mb-4">
           <button

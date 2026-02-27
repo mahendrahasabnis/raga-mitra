@@ -4,7 +4,7 @@ const Footer: React.FC<{ theme?: 'light' | 'dark' }> = ({ theme = 'dark' }) => {
   return (
     <div
       className="flex items-center justify-between px-4 py-1 border-t"
-      style={{ backgroundColor: 'var(--canvas)', borderColor: 'var(--border)' }}
+      style={{ backgroundColor: 'var(--canvas)', borderColor: 'var(--border)', paddingBottom: 'calc(2px + env(safe-area-inset-bottom, 0px))' }}
     >
       <span className="text-[10px] font-semibold tracking-wide select-none">
         <span style={{ color: 'var(--brand-red)' }}>Neo</span>

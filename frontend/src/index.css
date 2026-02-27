@@ -66,24 +66,34 @@
     letter-spacing: -0.01em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* iOS standalone: prevent rubber-band overscroll revealing white gaps */
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    /* Prevent double-tap zoom everywhere — inputs still allow pinch */
+    touch-action: manipulation;
+  }
+
+  html, body, #root {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   body {
-    min-height: 100vh;
-    min-height: 100dvh;
     background: linear-gradient(135deg, var(--canvas-gradient-start), var(--canvas-gradient-end));
     color: var(--foreground);
     position: relative;
-    overflow-x: hidden;
     overscroll-behavior: none;
   }
 
-  /* Hide horizontal scrollbar for Health and Fitness modules */
   #root {
+    display: flex;
+    flex-direction: column;
     overflow-x: hidden;
+  }
+
+  /* Prevent iOS Safari zoom on input focus (must be ≥16px) */
+  input, select, textarea {
+    font-size: 16px !important;
   }
 
   /* Hide scrollbars globally - All browsers */
@@ -339,7 +349,7 @@
     color: var(--foreground);
     border: 1px solid var(--border);
     font-family: 'Inter', system-ui, sans-serif;
-    font-size: 0.9375rem;
+    font-size: 1rem;
     letter-spacing: -0.01em;
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
