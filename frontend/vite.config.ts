@@ -5,6 +5,9 @@ import { writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
 
+let appVersionTag = 'dev';
+try { appVersionTag = execSync('git describe --tags --abbrev=0 2>/dev/null || git tag -l | tail -1').toString().trim() || 'dev'; } catch {}
+
 function versionJsonPlugin() {
   return {
     name: 'generate-version-json',
@@ -15,6 +18,7 @@ function versionJsonPlugin() {
         buildId: `${Date.now()}`,
         timestamp: new Date().toISOString(),
         gitSha,
+        tag: appVersionTag,
       };
       writeFileSync(resolve(__dirname, 'dist', 'version.json'), JSON.stringify(version));
       console.log('[version.json]', JSON.stringify(version));
@@ -101,6 +105,9 @@ export default defineConfig({
     }),
     versionJsonPlugin(),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersionTag),
+  },
   build: {
     chunkSizeWarningLimit: 1500,
   },

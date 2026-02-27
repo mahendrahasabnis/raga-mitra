@@ -7,6 +7,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { ClientProvider } from "../../contexts/ClientContext";
 import { resourcesApi } from "../../services/api";
 import QrScannerModal from "../Shared/QrScannerModal";
+import Footer from "../Footer";
 
 const baseTabs = [
   { to: "/app/today", label: "Today", icon: Home },
@@ -438,47 +439,50 @@ const AppShell: React.FC<Props> = ({ children }) => {
         </div>
       )}
 
-      <main className="flex-1 flex flex-col min-h-0 px-4 pt-4" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 0px))' }}>
+      <main className="flex-1 flex flex-col min-h-0 px-4 pt-4" style={{ paddingBottom: 'calc(7.5rem + env(safe-area-inset-bottom, 0px))' }}>
         <div className="flex-1 overflow-y-auto min-h-0">
           <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
         </div>
       </main>
 
-      <nav className={`fixed bottom-0 left-0 right-0 z-30 backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-        <div className="safe-area">
-          <div className="flex justify-center">
-            <div className="flex justify-around w-full">
-              {navTabs.map((tab) => {
-                const Icon = tab.icon;
-                const isActive = location.pathname === tab.to;
-                return (
-                  <NavLink
-                    key={tab.to}
-                    to={tab.to}
-                    className="flex flex-col items-center py-3 text-xs gap-1"
-                  >
-                    <motion.div
-                      animate={{ scale: isActive ? 1 : 0.96 }}
-                      className={`h-10 w-10 rounded-2xl grid place-items-center transition-colors ${
-                        isActive
-                          ? theme === "light"
-                            ? "bg-rose-100 border border-rose-200 text-rose-700"
-                            : "bg-rose-500/25 border border-rose-400/30 text-rose-100"
-                          : theme === "light"
-                            ? "text-slate-500"
-                            : "text-gray-200"
-                      }`}
+      <div className="fixed bottom-0 left-0 right-0 z-30" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <nav className={`backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)' }}>
+          <div className="safe-area">
+            <div className="flex justify-center">
+              <div className="flex justify-around w-full">
+                {navTabs.map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = location.pathname === tab.to;
+                  return (
+                    <NavLink
+                      key={tab.to}
+                      to={tab.to}
+                      className="flex flex-col items-center py-3 text-xs gap-1"
                     >
-                      <Icon className="h-5 w-5" />
-                    </motion.div>
-                    <span className={isActive ? (theme === "light" ? "text-rose-700" : "text-rose-100") : (theme === "light" ? "text-slate-600" : "text-gray-200")}>{tab.label}</span>
-                  </NavLink>
-                );
-              })}
+                      <motion.div
+                        animate={{ scale: isActive ? 1 : 0.96 }}
+                        className={`h-10 w-10 rounded-2xl grid place-items-center transition-colors ${
+                          isActive
+                            ? theme === "light"
+                              ? "bg-rose-100 border border-rose-200 text-rose-700"
+                              : "bg-rose-500/25 border border-rose-400/30 text-rose-100"
+                            : theme === "light"
+                              ? "text-slate-500"
+                              : "text-gray-200"
+                        }`}
+                      >
+                        <Icon className="h-5 w-5" />
+                      </motion.div>
+                      <span className={isActive ? (theme === "light" ? "text-rose-700" : "text-rose-100") : (theme === "light" ? "text-slate-600" : "text-gray-200")}>{tab.label}</span>
+                    </NavLink>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+        <Footer theme={theme} />
+      </div>
 
       {showQrScanner && (
         <QrScannerModal

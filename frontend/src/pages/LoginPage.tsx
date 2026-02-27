@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authApi, userApi } from '../services/api';
 import { elegantFirebasePhoneAuth } from '../services/firebasePhoneAuthElegant';
 import { Heart, Shield, Users, Stethoscope, Phone, Eye, EyeOff, ChevronDown, ArrowLeft, CheckCircle, AlertCircle, UserCheck, Building2, ClipboardList, CreditCard } from 'lucide-react';
+import Footer from '../components/Footer';
 
 // Country code data
 const countryData = [
@@ -972,9 +973,8 @@ const LoginPage: React.FC = () => {
             )}
 
             {/* Footer */}
-            <div className="mt-8 text-center text-sm text-gray-500">
-              <p>© 2024 Aarogya-Mitra. All rights reserved.</p>
-              <p className="mt-1">Secure • Reliable • Healthcare Management</p>
+            <div className="mt-8">
+              <Footer theme="dark" />
             </div>
           </div>
         </div>

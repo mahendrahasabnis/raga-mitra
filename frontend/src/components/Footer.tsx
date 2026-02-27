@@ -1,32 +1,17 @@
 import React from 'react';
-import logoImage from '../assets/neoabhro_logo_transparent.PNG';
 
-const Footer: React.FC = () => {
+const Footer: React.FC<{ theme?: 'light' | 'dark' }> = ({ theme = 'dark' }) => {
   return (
-    <footer className="glass-effect border-t border-white/20">
-      <div className="max-w-7xl mx-auto px-4 py-2">
-        <div className="flex items-center justify-between">
-          {/* NeoAbhro Text - Left */}
-          <div className="text-sm font-semibold text-white">
-            NeoAbhro
-          </div>
-          
-          {/* Logo - Center */}
-          <div className="flex items-center justify-center">
-            <img 
-              src={logoImage} 
-              alt="NeoAbhro Logo" 
-              className="w-8 h-8 object-contain"
-            />
-          </div>
-          
-          {/* App Version - Right */}
-          <p className="text-xs text-white/60">
-            v{import.meta.env.VITE_APP_VERSION || '1.0.0'}
-          </p>
-        </div>
-      </div>
-    </footer>
+    <div className={`flex items-center justify-between px-4 py-1 border-t ${theme === 'light' ? 'border-slate-200/60 bg-white/80' : 'border-white/5 bg-black/40'}`}>
+      <span className="text-[10px] font-semibold tracking-wide select-none">
+        <span className="text-rose-500">Neo</span>
+        <span className={theme === 'light' ? 'text-slate-600' : 'text-gray-400'}>Abhro</span>
+      </span>
+      <img src="/neoabhro-logo.png" alt="NeoAbhro" className="h-4 object-contain" />
+      <span className={`text-[9px] font-mono select-none ${theme === 'light' ? 'text-slate-400' : 'text-gray-500'}`}>
+        {__APP_VERSION__}
+      </span>
+    </div>
   );
 };
 
