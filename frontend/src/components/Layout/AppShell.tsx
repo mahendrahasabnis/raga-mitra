@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { HeartPulse, Home, Dumbbell, Salad, Users, LogOut, PhoneCall, MessageCircle, MessageSquare, Sun, Moon, User, LayoutDashboard, ScanLine } from "lucide-react";
@@ -36,6 +36,20 @@ const AppShell: React.FC<Props> = ({ children }) => {
   const [patientFromDash, setPatientFromDash] = useState<{ id: string; name: string; phone: string } | null>(null);
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showQrPopup, setShowQrPopup] = useState(false);
+  const [barsVisible, setBarsVisible] = useState(true);
+  const mainRef = useRef<HTMLElement>(null);
+  const lastScrollY = useRef(0);
+  const scrollThreshold = 8;
+
+  const onMainScroll = useCallback(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const y = el.scrollTop;
+    const delta = y - lastScrollY.current;
+    if (delta > scrollThreshold && y > 60) setBarsVisible(false);
+    else if (delta < -scrollThreshold || y < 30) setBarsVisible(true);
+    lastScrollY.current = y;
+  }, []);
 
   // Read client from URL during render so it's available immediately when navigating from Dash
   const urlClient = useMemo(() => {
@@ -213,8 +227,18 @@ const AppShell: React.FC<Props> = ({ children }) => {
     : "text-foreground";
 
   return (
-    <div className={`h-full ${shellBg} flex flex-col overflow-hidden`}>
-      <header className={`flex-shrink-0 z-20 backdrop-blur-xl ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`} style={{ borderColor: 'var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+    <div className={`h-full ${shellBg} flex flex-col overflow-hidden`} style={{ backgroundColor: 'var(--canvas)' }}>
+      <header
+        className={`flex-shrink-0 z-20 backdrop-blur-xl transition-all duration-300 ${theme === "light" ? "bg-glass border-b" : "bg-glass border-b"}`}
+        style={{
+          borderColor: 'var(--border)',
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          marginTop: barsVisible ? 0 : '-100%',
+          maxHeight: barsVisible ? '300px' : '0px',
+          overflow: 'hidden',
+          opacity: barsVisible ? 1 : 0,
+        }}
+      >
         <div className="safe-area px-4 py-3 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex flex-col gap-0.5">
@@ -439,48 +463,59 @@ const AppShell: React.FC<Props> = ({ children }) => {
         </div>
       )}
 
-      <main className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-2" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main
+        ref={mainRef}
+        onScroll={onMainScroll}
+        className="flex-1 min-h-0 overflow-y-auto px-4 pt-4 pb-2"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         <ClientProvider value={effectiveSelectedClient}>{children}</ClientProvider>
       </main>
 
-      <div className="flex-shrink-0 z-30">
+      <div
+        className="flex-shrink-0 z-30 transition-all duration-300"
+        style={{
+          backgroundColor: 'var(--canvas)',
+          maxHeight: barsVisible ? '300px' : '0px',
+          overflow: 'hidden',
+          opacity: barsVisible ? 1 : 0,
+        }}
+      >
         <nav className={`backdrop-blur-2xl border-t bg-glass`} style={{ borderColor: 'var(--border)' }}>
-          <div className="safe-area">
-            <div className="flex justify-center">
-              <div className="flex justify-around w-full">
-                {navTabs.map((tab) => {
-                  const Icon = tab.icon;
-                  const isActive = location.pathname === tab.to;
-                  return (
-                    <NavLink
-                      key={tab.to}
-                      to={tab.to}
-                      className="flex flex-col items-center py-3 text-xs gap-1"
-                    >
-                      <motion.div
-                        animate={{ scale: isActive ? 1 : 0.96 }}
-                        className={`h-10 w-10 rounded-2xl grid place-items-center transition-colors ${
-                          isActive
-                            ? theme === "light"
-                              ? "bg-rose-100 border border-rose-200 text-rose-700"
-                              : "bg-rose-500/25 border border-rose-400/30 text-rose-100"
-                            : theme === "light"
-                              ? "text-slate-500"
-                              : "text-gray-200"
-                        }`}
-                      >
-                        <Icon className="h-5 w-5" />
-                      </motion.div>
-                      <span className={isActive ? (theme === "light" ? "text-rose-700" : "text-rose-100") : (theme === "light" ? "text-slate-600" : "text-gray-200")}>{tab.label}</span>
-                    </NavLink>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="flex justify-around w-full">
+            {navTabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = location.pathname === tab.to;
+              return (
+                <NavLink
+                  key={tab.to}
+                  to={tab.to}
+                  className="flex flex-col items-center py-2 text-xs gap-0.5"
+                >
+                  <motion.div
+                    animate={{ scale: isActive ? 1 : 0.96 }}
+                    className={`h-9 w-9 rounded-2xl grid place-items-center transition-colors ${
+                      isActive
+                        ? theme === "light"
+                          ? "bg-rose-100 border border-rose-200 text-rose-700"
+                          : "bg-rose-500/25 border border-rose-400/30 text-rose-100"
+                        : theme === "light"
+                          ? "text-slate-500"
+                          : "text-gray-200"
+                    }`}
+                  >
+                    <Icon className="h-4.5 w-4.5" />
+                  </motion.div>
+                  <span className={`text-[10px] ${isActive ? (theme === "light" ? "text-rose-700" : "text-rose-100") : (theme === "light" ? "text-slate-600" : "text-gray-200")}`}>{tab.label}</span>
+                </NavLink>
+              );
+            })}
           </div>
         </nav>
         <Footer theme={theme} />
       </div>
+      {/* Safe area spacer — always present, fills with canvas color to the device edge */}
+      <div className="flex-shrink-0" style={{ height: 'env(safe-area-inset-bottom, 0px)', backgroundColor: 'var(--canvas)' }} />
 
       {showQrScanner && (
         <QrScannerModal
