@@ -1,6 +1,8 @@
 # Multi-stage build
 FROM node:20-alpine AS builder
 
+ARG APP_VERSION=dev
+
 # Set working directory
 WORKDIR /app
 
@@ -14,7 +16,7 @@ RUN npm install --legacy-peer-deps
 COPY . .
 
 # Build the application (skip type checking for deployment)
-RUN npx vite build
+RUN APP_VERSION=$APP_VERSION npx vite build
 
 # Production stage
 FROM nginx:alpine

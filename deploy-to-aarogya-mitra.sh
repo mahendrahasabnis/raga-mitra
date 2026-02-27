@@ -53,11 +53,13 @@ fi
 echo -e "${GREEN}Backend URL: $BACKEND_URL${NC}"
 echo ""
 
-echo "Step 2: Deploy frontend with BACKEND_URL=$BACKEND_URL..."
+APP_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git tag -l | tail -1)
+APP_VERSION=${APP_VERSION:-dev}
+echo "Step 2: Deploy frontend with BACKEND_URL=$BACKEND_URL, APP_VERSION=$APP_VERSION..."
 gcloud builds submit \
   --config=frontend/cloudbuild-integrated.yaml \
   --project="$TARGET_PROJECT" \
-  --substitutions="_BACKEND_URL=$BACKEND_URL"
+  --substitutions="_BACKEND_URL=$BACKEND_URL,_APP_VERSION=$APP_VERSION"
 
 FRONTEND_URL=$(gcloud run services describe "$FRONTEND_SERVICE" \
   --region="$REGION" \

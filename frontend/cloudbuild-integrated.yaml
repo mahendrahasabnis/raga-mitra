@@ -3,6 +3,8 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: 
       - 'build'
+      - '--build-arg'
+      - 'APP_VERSION=${_APP_VERSION}'
       - '-t'
       - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'
       - '-t'
@@ -38,6 +40,7 @@ steps:
 
 substitutions:
   _BACKEND_URL: 'https://aarogya-mitra-backend-integrated-nwwg5e5xbq-el.a.run.app'
+  _APP_VERSION: 'dev'
 
 images:
   - 'gcr.io/$PROJECT_ID/aarogya-mitra-frontend-integrated:$BUILD_ID'

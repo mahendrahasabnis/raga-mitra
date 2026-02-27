@@ -5,8 +5,11 @@ import { writeFileSync } from 'fs'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
 
-let appVersionTag = 'dev';
-try { appVersionTag = execSync('git describe --tags --abbrev=0 2>/dev/null || git tag -l | tail -1').toString().trim() || 'dev'; } catch {}
+let appVersionTag = process.env.APP_VERSION || '';
+if (!appVersionTag || appVersionTag === 'dev') {
+  try { appVersionTag = execSync('git describe --tags --abbrev=0 2>/dev/null || git tag -l | tail -1').toString().trim(); } catch {}
+}
+if (!appVersionTag) appVersionTag = 'dev';
 
 function versionJsonPlugin() {
   return {
