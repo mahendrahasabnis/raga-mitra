@@ -1,6 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useAppUpdate } from "./hooks/useAppUpdate";
 import LoginPage from "./pages/LoginPage";
 import LoadingSpinner from "./components/UI/LoadingSpinner";
 import TodayPage from "./pages/App/TodayPage";
@@ -47,6 +48,7 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  useAppUpdate();
   return (
     <AuthProvider>
       <Router>

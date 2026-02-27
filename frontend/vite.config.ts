@@ -1,6 +1,26 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { writeFileSync } from 'fs'
+import { resolve } from 'path'
+import { execSync } from 'child_process'
+
+function versionJsonPlugin() {
+  return {
+    name: 'generate-version-json',
+    closeBundle() {
+      let gitSha = 'unknown';
+      try { gitSha = execSync('git rev-parse --short HEAD').toString().trim(); } catch {}
+      const version = {
+        buildId: `${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        gitSha,
+      };
+      writeFileSync(resolve(__dirname, 'dist', 'version.json'), JSON.stringify(version));
+      console.log('[version.json]', JSON.stringify(version));
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
@@ -40,6 +60,14 @@ export default defineConfig({
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Never precache mutable files — they must always hit network
+        globIgnores: ['**/sw.js', '**/registerSW.js', '**/version.json'],
+        // SW lifecycle: activate immediately
+        skipWaiting: true,
+        clientsClaim: true,
+        // SPA navigation: serve index.html from precache, but with network-first fallback
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/health/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -71,6 +99,7 @@ export default defineConfig({
         ],
       },
     }),
+    versionJsonPlugin(),
   ],
   build: {
     chunkSizeWarningLimit: 1500,
